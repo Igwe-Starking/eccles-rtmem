@@ -8,7 +8,7 @@ test:
 
 ## Same matrix under AddressSanitizer + UndefinedBehaviorSanitizer
 sanitize:
-	EXTRA_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -g" ./tests/run_tests.sh
+	EXTRA_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -g" bash ./tests/run_tests.sh
 
 clean:
 	rm -rf build
