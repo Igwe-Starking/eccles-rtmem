@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-labelledby="t d">
+  <title id="t">EcclesRTLib</title>
+  <desc id="d">Three fixed-size memory pools of small, medium and large blocks under the title EcclesRTLib.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#111c33"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="400" fill="url(#bg)"/>
+
+  <text x="80" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="88" font-weight="800" fill="url(#accent)">EcclesRTLib</text>
+  <text x="84" y="205" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" fill="#e2e8f0">Deterministic memory for chips that can't afford surprises.</text>
+  <text x="84" y="250" font-family="Consolas, Menlo, monospace" font-size="22" fill="#64748b">fixed pools · zero fragmentation · validated frees · plain C99</text>
+
+  <!-- pool A: many small blocks -->
+  <g fill="#22d3ee">
+    <rect x="80"  y="290" width="24" height="24" rx="4"/><rect x="110" y="290" width="24" height="24" rx="4"/>
+    <rect x="140" y="290" width="24" height="24" rx="4" opacity=".35"/><rect x="170" y="290" width="24" height="24" rx="4"/>
+    <rect x="200" y="290" width="24" height="24" rx="4"/><rect x="230" y="290" width="24" height="24" rx="4" opacity=".35"/>
+    <rect x="260" y="290" width="24" height="24" rx="4"/><rect x="290" y="290" width="24" height="24" rx="4"/>
+  </g>
+  <!-- pool B: medium blocks -->
+  <g fill="#818cf8">
+    <rect x="330" y="290" width="48" height="24" rx="4"/><rect x="384" y="290" width="48" height="24" rx="4" opacity=".35"/>
+    <rect x="438" y="290" width="48" height="24" rx="4"/><rect x="492" y="290" width="48" height="24" rx="4"/>
+  </g>
+  <!-- pool C: large blocks -->
+  <g fill="#a78bfa">
+    <rect x="580" y="290" width="96" height="24" rx="4"/><rect x="682" y="290" width="96" height="24" rx="4"/>
+    <rect x="784" y="290" width="96" height="24" rx="4" opacity=".35"/>
+  </g>
+  <text x="80"  y="342" font-family="Consolas, Menlo, monospace" font-size="16" fill="#94a3b8">pool A · small</text>
+  <text x="330" y="342" font-family="Consolas, Menlo, monospace" font-size="16" fill="#94a3b8">pool B · medium</text>
+  <text x="580" y="342" font-family="Consolas, Menlo, monospace" font-size="16" fill="#94a3b8">pool C · large</text>
+</svg>

@@ -1,0 +1,4 @@
+version: "1.0.0"
+description: "Deterministic fixed-pool memory allocator. Plain C99, validated frees, automatic FreeRTOS locking."
+url: https://github.com/igwe-starking/eccles-rtmem
+license: MIT

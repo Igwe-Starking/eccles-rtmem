@@ -1,0 +1,28 @@
+# build output
+build/
+*.o
+*.obj
+*.elf
+*.hex
+*.bin
+*.map
+*.a
+*.out
+*.exe
+
+# test artifacts
+tests/unit
+tests/stress
+tests/smoke
+*.dSYM/
+
+# PlatformIO / IDEs
+.pio/
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

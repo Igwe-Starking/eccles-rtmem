@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use EcclesRTLib in research or a product write-up, please cite it as below."
+title: "EcclesRTLib"
+type: software
+version: 1.0.0
+date-released: 2026-09-24
+license: MIT
+repository-code: "https://github.com/igwe-starking/eccles-rtmem"
+authors:
+  - alias: "igwe-starking"
+    name: "Nwobodo Ecclesiastes"
