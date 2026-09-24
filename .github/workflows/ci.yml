@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configuration matrix
-        run: CC=${{ matrix.cc }} ./tests/run_tests.sh
+        run: CC=${{ matrix.cc }} bash ./tests/run_tests.sh
 
   sanitizers:
     name: ASan + UBSan
