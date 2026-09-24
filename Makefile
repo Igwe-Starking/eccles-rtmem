@@ -4,7 +4,7 @@ CC ?= gcc
 
 ## Run the full configuration matrix
 test:
-	chmod +x ./tests/run_tests.sh
+	bash ./tests/run_tests.sh
 
 ## Same matrix under AddressSanitizer + UndefinedBehaviorSanitizer
 sanitize:
