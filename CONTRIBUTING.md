@@ -12,7 +12,7 @@ Thanks for helping! Bug reports, new platform backends, docs fixes and tests are
 ## Dev loop
 
 ```sh
-make test       # 8-configuration matrix (default, heap, NO_LOCK, 1 KB, custom splits, near-255 cap, minimum pool)
+make test       # 12-configuration matrix (default, heap, NO_LOCK, MIN_WASTE, 1 KB, custom splits, near-255 cap, minimum pool, RAM-tiered detection)
 make sanitize   # same matrix under AddressSanitizer + UndefinedBehaviorSanitizer
 ```
 

@@ -34,7 +34,7 @@ int main(void){
 
     /* double free rejected */
     assert(eccles_rt_free(c) == ECCLES_RT_FREE_OK);
-    assert(eccles_rt_free(c) == ECCLES_RT_FREE_DOUBLE_FREE);
+    assert(eccles_rt_free(c) == ECCLES_RT_FREE_ALREADY_FREE);
 
     /* out-of-range pointer rejected without touching real state */
     int local = 0;

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/banner.svg" alt="EcclesRTLib — deterministic memory for chips that can't afford surprises" width="100%">
+<img src="assets/banner.svg" alt="EcclesRTLib — predictable memory for chips that can't afford surprises" width="100%">
 
 <br>
 
@@ -8,6 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-22d3ee.svg)](LICENSE)
 [![C99](https://img.shields.io/badge/C-99-a78bfa.svg)](#)
 [![Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen.svg)](#)
+[![Version](https://img.shields.io/badge/version-1.1.0-818cf8.svg)](CHANGELOG.md)
 [![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-ea4aaa.svg)](https://github.com/sponsors/igwe-starking)
 
 ### `malloc()` works great — until hour 300, when your device quietly dies.
@@ -27,14 +28,17 @@ Same `malloc`/`free` shape. No heap fragmentation. No surprises.
 
 Your firmware passes every bench test. Then it ships. Somewhere around day 12, a radio frame arrives and `malloc(96)` returns `NULL` — even though the heap reports **plenty of free memory**. It's just chopped into pieces too small to use.
 
+<img src="assets/fragmentation.svg" alt="A fragmented classic heap fails a 96-byte request despite having 256 bytes free; EcclesRTLib satisfies the same request from a fixed pool of 128-byte blocks" width="100%">
+
 That's heap fragmentation. On a desktop it's a rounding error. On a chip with 2 KB of RAM it's a **field failure you'll never see in a debugger.**
 
 EcclesRTLib removes the failure mode instead of tuning around it:
 
 - 🧱 **Memory is carved into fixed-size blocks up front.** Allocate, free, allocate again — the layout never degrades.
+- 📏 **Sized for your chip, not a guess.** Give it your RAM size and it tiers the budget automatically; a curated lookup table already knows common 8-bit parts.
 - 🔒 **The lock is picked for you.** FreeRTOS, Zephyr, CMSIS-RTOS2, Pico SDK (dual-core safe), AVR, MSP430, Cortex-M… detected at compile time.
 - 🛡️ **Bad frees can't corrupt anything.** Double free, wild pointer, pointer into the middle of a buffer — all rejected *and told to you*, by name.
-- 🧪 **Tested like it matters.** Randomized stress with per-buffer canary bytes, across 8 configurations, clean under AddressSanitizer and UBSan.
+- 🧪 **Tested like it matters.** Randomized stress with per-buffer canary bytes, across 12 configurations, clean under AddressSanitizer and UBSan up to 2M operations.
 
 ## ⚡ Quick start (30 seconds)
 
@@ -56,7 +60,7 @@ void on_radio_frame(void) {
 }
 ```
 
-That's the whole integration. No linker scripts, no RTOS hooks, no build-system gymnastics.
+That's the whole integration. No linker scripts, no RTOS hooks, no build-system gymnastics. `eccles_rt_calloc`, `eccles_rt_realloc` and `eccles_rt_reset` are there too — see the [API reference](docs/DESIGN.md#api).
 
 ## 🕵️ Frees that talk back
 
@@ -65,7 +69,7 @@ A normal `free()` shrugs when you hand it garbage. This one tells you what you d
 ```c
 switch (eccles_rt_free(ptr)) {
     case ECCLES_RT_FREE_OK:            break;             // freed
-    case ECCLES_RT_FREE_DOUBLE_FREE:   /* fix your logic */ break;
+    case ECCLES_RT_FREE_ALREADY_FREE:  /* fix your logic */ break;
     case ECCLES_RT_FREE_MID_RUN:       /* pointer into the middle of a buffer */ break;
     case ECCLES_RT_FREE_OUT_OF_RANGE:  /* not ours at all */ break;
     case ECCLES_RT_FREE_MISALIGNED:    /* not on a block boundary */ break;
@@ -73,23 +77,32 @@ switch (eccles_rt_free(ptr)) {
 }
 ```
 
-Ignore the return value and it behaves like the `free()` you already know. Turn on `ECCLES_RT_DEBUG` and every failed allocation and rejected free is logged, with silence on the success path.
+Ignore the return value and it behaves like the `free()` you already know. Turn on `ECCLES_RT_DEBUG` and every failed allocation and rejected free is logged — after the lock is released, never while it's held — with silence on the success path.
 
 ## 🔧 How it works
 
-One memory budget, three pools of fixed-size blocks. Each request goes to the smallest block class that fits; requests bigger than one large block get a contiguous run of blocks.
+One memory budget, three pools of fixed-size blocks. Each request goes to the smallest class that fits, escalating upward if that class is full; requests bigger than one large block take a contiguous run from a single pool.
 
-```
- ECCLES_RT_MEM_SIZE
-┌───────────────────┬───────────────────┬───────────────────────────────────────┐
-│ Pool A  (25%)     │ Pool B  (25%)     │ Pool C  (50%)                         │
-│ ▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪   │ ▬ ▬ ▬ ▬           │ ▰▰ ▰▰ ▰▰ ▰▰                          │
-│ small blocks      │ medium blocks     │ large blocks (and multi-block runs)   │
-└───────────────────┴───────────────────┴───────────────────────────────────────┘
-      16 B / 64 B           32 B / 128 B          64 B / 256 B     (1 KB budget / 20 KB budget)
+<img src="assets/how-it-works.svg" alt="EcclesRTLib splits one memory budget into three pools: small (25%), medium (25%) and large (50%), each request routed to the smallest class that fits" width="100%">
+
+Everything is decided at compile time: pool sizes, block counts, bookkeeping. Block sizes should be powers of two, since the hot path then uses shifts instead of multiply/divide — real savings on an AVR with no hardware multiplier. A non-power-of-two size still works, just via plain division. Invalid configurations stop the build with a clear `#error`, not a runtime mystery.
+
+## 📐 Sized for your chip, not a guess
+
+Auto-detection now tiers the budget against your chip's *actual* RAM instead of a flat 1 KB / 20 KB split:
+
+```c
+#define ECCLES_RT_TOTAL_RAM_SIZE  8192ul   // your chip's real RAM, from the datasheet
 ```
 
-Everything is decided at compile time: pool sizes, block counts, bookkeeping. Block sizes are powers of two, so the hot path uses shifts instead of multiply/divide — which matters on an AVR with no hardware multiplier. Invalid configurations stop the build with a clear `#error`, not a runtime mystery.
+| Your chip's RAM | Budget |
+|---|---|
+| < 4 KB | 50% of RAM |
+| < 10 KB | 25% of RAM |
+| < 100 KB | 10% of RAM |
+| ≥ 100 KB | 5% of RAM |
+
+A Mega2560 (8 KB RAM) now gets 2 KB instead of the same flat 1 KB as a 2 KB-RAM Uno. Classic 8-bit Arduino/LaunchPad chips don't even need `ECCLES_RT_TOTAL_RAM_SIZE` set — their compiler already hands over an exact-RAM macro (e.g. `__AVR_ATmega328P__`) that a built-in lookup table picks up automatically. Full table and the one known rough edge (a small non-monotonic step right at each tier boundary) are in [docs/DESIGN.md](docs/DESIGN.md#memory-budget).
 
 ## 🌍 Runs where you do
 
@@ -122,7 +135,7 @@ Copy `src/eccles_rtmem.c` and `src/eccles_rtmem.h` into your tree and add the `.
 <details>
 <summary><b>Arduino</b></summary>
 
-Download the repo as a ZIP and use **Sketch → Include Library → Add .ZIP Library**, or clone into your `libraries/` folder. Then `#include <eccles_rtmem.h>`.
+Download the repo as a ZIP and use **Sketch → Include Library → Add .ZIP Library**, or clone into your `libraries/` folder as `eccles-rtmem`. Then `#include <eccles_rtmem.h>`.
 </details>
 
 <details>
@@ -150,18 +163,18 @@ target_link_libraries(my_firmware PRIVATE eccles::rtlib)
 
 ## 🎛️ Configure only what you care about
 
-Defaults are sensible for prototyping. For anything you ship, **set the budget explicitly** — the auto-default is a family-level guess, not a per-chip one (an STM32F1 might have 4 KB of RAM or 128 KB), and the library will remind you with a build-time warning.
+Defaults are sensible for prototyping. For anything you ship, **set the budget explicitly**:
 
 ```c
 // via build flags:   -DECCLES_RT_MEM_SIZE=4096
-// or by copying src/eccles_rtmem_config.h next to your sources and uncommenting:
+// or copy config/eccles_rtmem_config.h next to your sources and uncomment:
 #define ECCLES_RT_MEM_SIZE       4096ul
 #define ECCLES_RT_BLOCK_A_SIZE   32ul
 #define ECCLES_RT_BLOCK_B_SIZE   128ul
 #define ECCLES_RT_BLOCK_C_SIZE   512ul
 ```
 
-Every knob (pool split, alignment, heap-backed mode, custom locks, logging) is documented inline in [`eccles_rtmem_config.h`](src/eccles_rtmem_config.h) and in [docs/DESIGN.md](docs/DESIGN.md).
+Every knob (pool split, alignment, heap-backed mode, the `MIN_WASTE` allocation strategy, custom locks, logging) is documented inline in [`config/eccles_rtmem_config.h`](config/eccles_rtmem_config.h) and in [docs/DESIGN.md](docs/DESIGN.md).
 
 > ⚠️ Put settings in the config file or in build flags, not in a `#define` above your own `#include`. The library's `.c` file must see the same values as your code.
 
@@ -171,6 +184,8 @@ I'd rather you pick the right tool than be surprised later.
 
 - **It's a bounded fixed-pool allocator, not a general `malloc()` replacement.** A 33-byte request in a 64-byte class wastes 31 bytes. That's the price of zero fragmentation.
 - **Pools are independent.** A request can fail even when total free memory across all three pools would have been enough, and one allocation never spans two pools.
+- **The RAM-tiered budget has a rough edge.** A chip with 4095 bytes of RAM computes ~50% (2048 B); one with exactly 4096 bytes computes only ~25% (1024 B) — the budget can drop as RAM goes up, right at each tier boundary. If your part sits near one, set `ECCLES_RT_MEM_SIZE` directly instead.
+- **`MIN_WASTE` genuinely trades one failure mode for another.** It reduces bytes wasted on a single oversized request, at the cost of consuming a small pool's block capacity that frequent small allocations might have needed later. Neither default is universally correct — see the worked example in [docs/DESIGN.md](docs/DESIGN.md#allocation-strategy-for-oversized-multi-block-requests).
 - **255-block cap** across A+B+C (compile-time checked). Plenty for typical MCU budgets; a wider registry is on the roadmap.
 - **RTOS-mutex backends aren't ISR-safe** by default. Interrupt-masking backends (AVR, MSP430, Cortex-M…) are.
 - **No formal worst-case timing has been measured on real hardware yet.** The design is bounded and deterministic; the numbers are on the roadmap.
@@ -178,12 +193,21 @@ I'd rather you pick the right tool than be surprised later.
 ## 🧪 Tests
 
 ```sh
-make test       # 8 configurations: default, heap mode, NO_LOCK, 1 KB, custom split,
-                # custom block sizes, near the 255-block cap, minimum 1-block pools
-make sanitize   # the same matrix under AddressSanitizer + UndefinedBehaviorSanitizer
+make test       # 12 configurations: default, heap mode, NO_LOCK, MIN_WASTE, 1 KB,
+                 # custom split, custom block sizes, near the 255-block cap,
+                 # minimum 1-block pools, and 3 RAM-tiered detection scenarios
+make sanitize    # the same matrix under AddressSanitizer + UndefinedBehaviorSanitizer
 ```
 
-The suite includes 200,000-operation randomized stress runs where every live buffer carries a unique canary pattern that's re-verified before each free. It's also how a genuine out-of-bounds write near the 255-block boundary was found and fixed (see the [changelog](CHANGELOG.md)).
+The suite includes 200,000-operation randomized stress runs where every live buffer carries a unique canary pattern that's re-verified before each free, plus `eccles_rt_get_stats()` invariant checks throughout. It's how a genuine out-of-bounds write and an incomplete alignment guarantee were both found and fixed — see the [changelog](CHANGELOG.md).
+
+## 🚲 Where this came from
+
+EcclesRTLib didn't start as a library. It started as one `.cpp` file — `RuntimeMemory.cpp` — written to keep a real ESP32 device off the heap: [**eccles-esp32-smart-bike**](https://github.com/Igwe-Starking/eccles-esp32-smart-bike), a smart e-bike platform handling real-time control, audio streaming, and Android communication on hardware that couldn't afford a fragmented heap mid-ride.
+
+That original allocator only ever had to know one chip. This library is what happened when it had to learn about every chip — stripped of ESP-IDF/FreeRTOS specifics, given eight more locking backends, and rebuilt in plain C99 so the same design could run on an ATtiny as easily as an ESP32. The function names changed (`e_malloc` → `eccles_rt_malloc`, and friends — the old ones still work as aliases), but the core idea, and the block-pool design itself, is exactly what shipped on that bike.
+
+<sub>Curious what an allocator looks like before it's had to be polite to nine other platforms? <a href="https://github.com/Igwe-Starking/eccles-esp32-smart-bike/blob/main/firmware/source/components/eccles/src/RuntimeMemory.cpp">Read the original</a>.</sub>
 
 ## 🗺️ Roadmap
 
@@ -192,6 +216,7 @@ The suite includes 200,000-operation randomized stress runs where every live buf
 - [ ] Optional cross-pool allocation for oversized requests
 - [ ] Measured worst-case timing on real hardware (AVR, Cortex-M0/M4, ESP32)
 - [ ] Hardware-verified locking backends for STM8, 8-bit PIC and 8051
+- [ ] Multi-instance support (independent allocator handles instead of one global pool)
 
 Want one of these? [Open an issue](../../issues) or a PR — see [CONTRIBUTING.md](CONTRIBUTING.md).
 

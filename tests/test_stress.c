@@ -77,7 +77,7 @@ int main(int argc, char **argv){
             for(j = 0; j < live[idx].size; j++){
                 assert(live[idx].ptr[j] == live[idx].canary);
             }
-            eccles_rt_free_status_t st = eccles_rt_free(live[idx].ptr);
+            eccles_rt_status_t st = eccles_rt_free(live[idx].ptr);
             assert(st == ECCLES_RT_FREE_OK);
             freeCount++;
             live[idx] = live[liveCount - 1];

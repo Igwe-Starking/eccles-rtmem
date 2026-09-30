@@ -8,6 +8,7 @@
 */
 
 #include "eccles_rtmem.h"
+#include <string.h> /* memcpy/memset - used by eccles_rt_calloc/_realloc */
 
 /* ===================================================================== *
  *  logging
@@ -148,9 +149,21 @@
   #define ECCLES_RT_UNLOCK(m, st)     do { __builtin_set_isr_state(st); (void)(m); } while (0)
   #define ECCLES_RT_MUTEX_VALID(m)    ((m) != 0)
 
-#elif defined(__arm__) || defined(__ARM_ARCH) || defined(__CORTEX_M)
-  /* generic Cortex-M bare metal (no RTOS detected above): STM32 (any
-     line not already matched), SAMD, nRF52 without Zephyr/mbed's own
+#elif defined(__ARM_ARCH_6M__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__) \
+   || defined(__ARM_ARCH_8M_BASE__) || defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8_1M_MAIN__) \
+   || defined(__CORTEX_M)
+  /* Cortex-M specifically (not "any ARM"). PRIMASK is an M-profile-only
+     special register - it doesn't exist on Cortex-A/R, where the
+     equivalent CPSR-based interrupt masking uses different instructions
+     entirely, so this used to be gated on plain __arm__/__ARM_ARCH, which
+     also matches Cortex-A/R (and even older ARM7TDMI-class cores),
+     meaning an `mrs PRIMASK` on one of those would be an invalid
+     instruction for that core. __ARM_ARCH_*M*__ are the macros GCC/Clang
+     define from -mcpu=cortex-mN; __CORTEX_M is populated by CMSIS's
+     core_cm*.h if that's been included instead. A plain ARM target that
+     matches neither now correctly falls through to the no-op fallback
+     below rather than risking a bad instruction. Covers STM32 (any line
+     not already matched), SAMD, nRF52 without Zephyr/mbed's own
      scheduler, RP2040 if the Pico SDK headers above weren't reachable,
      etc. - save/disable/restore PRIMASK into a call-site-local `st`,
      syntax depends on toolchain */
@@ -205,10 +218,12 @@
  *  ECCLES_RT_MEM_USE_HEAP is defined
  * ===================================================================== */
 
-#define ECCLES_RT__POOL_BYTES \
-    ((size_t)ECCLES_RT_POOL_A_COUNT * ECCLES_RT_BLOCK_A_SIZE + \
-     (size_t)ECCLES_RT_POOL_B_COUNT * ECCLES_RT_BLOCK_B_SIZE + \
-     (size_t)ECCLES_RT_POOL_C_COUNT * ECCLES_RT_BLOCK_C_SIZE)
+/* reuse the header's formula (already validated against ECCLES_RT_MEM_SIZE
+   there) rather than duplicating the 3-term sum here; the (size_t) cast is
+   still applied here for runtime array-sizing/pointer-arithmetic safety,
+   which the header's #if-only version can't use (the preprocessor doesn't
+   understand C casts) */
+#define ECCLES_RT__POOL_BYTES ((size_t)ECCLES_RT__ACTUAL_POOL_BYTES)
 
 #define ECCLES_RT__OFFSET_A ((size_t)0)
 #define ECCLES_RT__OFFSET_B (ECCLES_RT__OFFSET_A + (size_t)ECCLES_RT_POOL_A_COUNT * ECCLES_RT_BLOCK_A_SIZE)
@@ -219,16 +234,21 @@
 #define ECCLES_RT__REGBASE_C (ECCLES_RT_POOL_A_COUNT + ECCLES_RT_POOL_B_COUNT)
 
 /* every pointer eccles_rt_malloc() hands out is aligned to
-   ECCLES_RT_ALIGNMENT bytes: automatic in heap mode (malloc() already
-   guarantees max alignment), applied explicitly here in static mode via
-   a GCC/Clang alignment attribute. On a non-GCC/Clang toolchain in
-   static mode, align eccles_rt_pool yourself with your compiler's own
-   attribute/pragma if you need to cast returned pointers to wider types. */
+   ECCLES_RT_ALIGNMENT bytes. In heap mode this is done manually (over-
+   allocate by up to ECCLES_RT_ALIGNMENT-1 extra bytes, then round the
+   pointer up) rather than just trusting malloc()'s own alignment
+   guarantee, which the C standard only promises up to alignof(max_align_t)
+   - commonly 8 or 16 bytes - and ECCLES_RT_ALIGNMENT can be configured
+   higher than that. In static mode it's applied via a GCC/Clang/ARM
+   Compiler alignment attribute; on another toolchain in static mode,
+   align eccles_rt_pool yourself with your compiler's own attribute/pragma
+   if you need to cast returned pointers to wider types. */
 #if defined(ECCLES_RT_MEM_USE_HEAP)
   #include <stdlib.h>
-  static uint8_t *eccles_rt_pool = NULL;
+  static uint8_t *eccles_rt_pool_raw = NULL; /* the actual malloc()'d pointer */
+  static uint8_t *eccles_rt_pool = NULL;     /* eccles_rt_pool_raw, rounded up to ECCLES_RT_ALIGNMENT */
   static uint8_t *eccles_rt_reg  = NULL;
-#elif defined(__GNUC__) || defined(__clang__)
+#elif defined(__GNUC__) || defined(__clang__) || defined(__ARMCC_VERSION)
   static uint8_t eccles_rt_pool[ECCLES_RT__POOL_BYTES] __attribute__((aligned(ECCLES_RT_ALIGNMENT)));
   static uint8_t eccles_rt_reg[ECCLES_RT_TOTAL_BLOCKS];
 #else
@@ -254,6 +274,10 @@ typedef struct {
     uint8_t  count;      /* number of blocks in this pool */
     uint8_t  regBase;    /* index into eccles_rt_reg[] where this pool starts */
     uint8_t  cursor;     /* absolute registry index: where the next search starts */
+    uint8_t  usedBlocks;  /* running count of blocks currently in use, kept in
+                             sync by getFree/freeBuffer so eccles_rt_get_stats()
+                             doesn't need to rescan the whole registry under
+                             the lock every time it's called */
 } eccles_rt_pool_t;
 
 static eccles_rt_pool_t eccles_rt_pools[3];
@@ -263,6 +287,18 @@ static ECCLES_RT_MUTEX_T eccles_rt_lock;
 #define POOL_A 0
 #define POOL_B 1
 #define POOL_C 2
+
+#if defined(ECCLES_RT_MALLOC_MIN_WASTE)
+/* named struct (not an anonymous/typeof-based one) so the sort below is
+   plain, portable C99 - no compiler extensions needed on toolchains that
+   don't support typeof (IAR, Keil ARMCC5, XC8/16/32, ...) */
+typedef struct {
+    uint8_t poolIdx;
+    size_t  need;
+    size_t  waste;
+    bool    feasible;
+} eccles_rt__waste_candidate_t;
+#endif
 
 static uint8_t eccles_rt__log2_exact(size_t v){
     uint8_t shift = 0;
@@ -284,7 +320,6 @@ static uint8_t* eccles_rt_getFree(uint8_t size, uint8_t poolIdx){
 
     /* a request whose size doesn't fit in this pool at all can never be satisfied here */
     if(size == 0 || size > rsz){
-        ECCLES_RT_LOG_LINE("eccles_rtmem: request exceeds this pool's total block count, not just fragmentation");
         return NULL;
     }
 
@@ -327,6 +362,7 @@ static uint8_t* eccles_rt_getFree(uint8_t size, uint8_t poolIdx){
                         eccles_rt_reg[iu] = (uint8_t)ECCLES_RT_CONT_MARK;
                     }
                 }
+                p->usedBlocks = (uint8_t)(p->usedBlocks + size);
 
                 {
                     uint8_t next = (uint8_t)(i + size);
@@ -338,23 +374,29 @@ static uint8_t* eccles_rt_getFree(uint8_t size, uint8_t poolIdx){
         }
     }
 
-    if(bpt == NULL){
-        ECCLES_RT_LOG_LINE("eccles_rtmem: size fits this pool but no contiguous run of free blocks was found");
-    }
+    /* deliberately no logging here - this can run inside the lock (called
+       from eccles_rt_malloc, possibly more than once per call in the
+       oversized-request fallback chain), and ECCLES_RT_LOG_LINE can be a
+       slow I/O call (Serial.println, printf, ...) that has no business
+       running while interrupts are masked or another task is blocked on
+       this mutex. eccles_rt_malloc logs once, after unlocking, if every
+       attempt failed. */
     return bpt;
 }
 
-static eccles_rt_free_status_t eccles_rt_freeBuffer(uint8_t* buffer){
-    /* pointer arithmetic/comparison against an arbitrary (possibly
-       invalid) pointer is only well-defined when both pointers are known
-       to be inside the same array - buffer might not be, so route
-       everything through uintptr_t integer comparisons instead of
-       comparing/subtracting the uint8_t* pointers directly */
+/* Shared by eccles_rt_freeBuffer() and eccles_rt_realloc(): resolves an
+   allocated pointer back to its registry slot. Returns ECCLES_RT_FREE_OK
+   (despite the name, this isn't freeing anything - it's just validation)
+   with *outPool, *outRind, and *outRunBlocks filled in, or the specific
+   rejection status otherwise. Kept separate from eccles_rt_freeBuffer so
+   realloc doesn't need to duplicate this validation, or free-then-
+   reallocate-the-registry-slot just to inspect it. */
+static eccles_rt_status_t eccles_rt__resolve(uint8_t *buffer, eccles_rt_pool_t **outPool, uint8_t *outRind, uint8_t *outRunBlocks){
     uintptr_t base = (uintptr_t)eccles_rt_pool;
     uintptr_t addr = (uintptr_t)buffer;
     size_t oft;
-    eccles_rt_pool_t *p = NULL;
-    uint8_t rind, mb, i;
+    eccles_rt_pool_t *p;
+    uint8_t rind, mb;
 
     if(addr < base || (addr - base) >= ECCLES_RT__POOL_BYTES){
         return ECCLES_RT_FREE_OUT_OF_RANGE;
@@ -369,36 +411,38 @@ static eccles_rt_free_status_t eccles_rt_freeBuffer(uint8_t* buffer){
         p = &eccles_rt_pools[POOL_C];
     }
 
-    /* reject pointers that don't land exactly on a block boundary */
     if(p->shift != 0xFF){
-        if(((oft - p->offset) & (p->blockSize - 1)) != 0){
-            ECCLES_RT_LOG_LINE("eccles_rtmem: eccles_rt_free pointer is not a block start, ignoring");
-            return ECCLES_RT_FREE_MISALIGNED;
-        }
+        if(((oft - p->offset) & (p->blockSize - 1)) != 0) return ECCLES_RT_FREE_MISALIGNED;
         rind = (uint8_t)(((oft - p->offset) >> p->shift) + p->regBase);
     } else {
-        if(((oft - p->offset) % p->blockSize) != 0){
-            ECCLES_RT_LOG_LINE("eccles_rtmem: eccles_rt_free pointer is not a block start, ignoring");
-            return ECCLES_RT_FREE_MISALIGNED;
-        }
+        if(((oft - p->offset) % p->blockSize) != 0) return ECCLES_RT_FREE_MISALIGNED;
         rind = (uint8_t)(((oft - p->offset) / p->blockSize) + p->regBase);
     }
 
     mb = eccles_rt_reg[rind];
+    if(mb == 0) return ECCLES_RT_FREE_ALREADY_FREE; /* i.e. "not currently allocated" */
+    if(mb == (uint8_t)ECCLES_RT_CONT_MARK) return ECCLES_RT_FREE_MID_RUN;
 
-    /* reject double frees and mid-run pointers instead of corrupting the registry */
-    if(mb == 0){
-        ECCLES_RT_LOG_LINE("eccles_rtmem: eccles_rt_free buffer already free, ignoring double free");
-        return ECCLES_RT_FREE_DOUBLE_FREE;
-    }
-    if(mb == (uint8_t)ECCLES_RT_CONT_MARK){
-        ECCLES_RT_LOG_LINE("eccles_rtmem: eccles_rt_free pointer is mid-run, not a block start, ignoring");
-        return ECCLES_RT_FREE_MID_RUN;
-    }
+    *outPool = p;
+    *outRind = rind;
+    *outRunBlocks = mb;
+    return ECCLES_RT_FREE_OK;
+}
+
+static eccles_rt_status_t eccles_rt_freeBuffer(uint8_t* buffer){
+    eccles_rt_pool_t *p;
+    uint8_t rind, mb, i;
+    eccles_rt_status_t st = eccles_rt__resolve(buffer, &p, &rind, &mb);
+
+    /* no logging here (see the "deliberately no logging" note in getFree
+       above - same reasoning, this runs inside the lock); eccles_rt_free
+       logs once, after unlocking, based on the status this returns. */
+    if(st != ECCLES_RT_FREE_OK) return st;
 
     for(i = rind; i < (uint8_t)(rind + mb); i++){
         eccles_rt_reg[i] = 0;
     }
+    p->usedBlocks = (uint8_t)(p->usedBlocks - mb);
 
     /* zeroing every freed block is skipped on purpose - costs up to
        blockSize * mb bytes for nothing most callers need. If you need a
@@ -424,14 +468,25 @@ bool eccles_rtmem_init(void){
     if(eccles_rt_initialized) return true;
 
 #if defined(ECCLES_RT_MEM_USE_HEAP)
-    eccles_rt_pool = (uint8_t*)malloc(ECCLES_RT__POOL_BYTES);
-    eccles_rt_reg  = (uint8_t*)malloc(ECCLES_RT_TOTAL_BLOCKS);
-    if(eccles_rt_pool == NULL || eccles_rt_reg == NULL){
+    /* over-allocate by up to ECCLES_RT_ALIGNMENT-1 extra bytes and round
+       the pointer up ourselves, rather than trusting malloc() to already
+       satisfy ECCLES_RT_ALIGNMENT - the C standard only guarantees
+       malloc() aligns to alignof(max_align_t) (commonly 8 or 16 bytes),
+       and ECCLES_RT_ALIGNMENT can be configured higher than that. This
+       works portably on any C99 implementation, no compiler-specific
+       attribute needed. ECCLES_RT_ALIGNMENT is validated to be a power of
+       two in the header, which is what makes the bitmask rounding below
+       valid. */
+    eccles_rt_pool_raw = (uint8_t*)malloc(ECCLES_RT__POOL_BYTES + ECCLES_RT_ALIGNMENT - 1);
+    eccles_rt_reg      = (uint8_t*)malloc(ECCLES_RT_TOTAL_BLOCKS);
+    if(eccles_rt_pool_raw == NULL || eccles_rt_reg == NULL){
         ECCLES_RT_LOG_LINE("eccles_rtmem: heap allocation failed in eccles_rtmem_init");
-        free(eccles_rt_pool); eccles_rt_pool = NULL;
-        free(eccles_rt_reg);  eccles_rt_reg  = NULL;
+        free(eccles_rt_pool_raw); eccles_rt_pool_raw = NULL;
+        free(eccles_rt_reg);      eccles_rt_reg      = NULL;
         return false; /* stays uninitialized - call again later to retry */
     }
+    eccles_rt_pool = (uint8_t*)(((uintptr_t)eccles_rt_pool_raw + (ECCLES_RT_ALIGNMENT - 1))
+                                 & ~(uintptr_t)(ECCLES_RT_ALIGNMENT - 1));
     {
         uint16_t k;
         for(k = 0; k < ECCLES_RT_TOTAL_BLOCKS; k++) eccles_rt_reg[k] = 0;
@@ -444,6 +499,7 @@ bool eccles_rtmem_init(void){
     eccles_rt_pools[POOL_A].regBase   = ECCLES_RT__REGBASE_A;
     eccles_rt_pools[POOL_A].cursor    = ECCLES_RT__REGBASE_A;
     eccles_rt_pools[POOL_A].shift     = eccles_rt__log2_exact(ECCLES_RT_BLOCK_A_SIZE);
+    eccles_rt_pools[POOL_A].usedBlocks = 0;
 
     eccles_rt_pools[POOL_B].offset    = ECCLES_RT__OFFSET_B;
     eccles_rt_pools[POOL_B].blockSize = ECCLES_RT_BLOCK_B_SIZE;
@@ -451,6 +507,7 @@ bool eccles_rtmem_init(void){
     eccles_rt_pools[POOL_B].regBase   = ECCLES_RT__REGBASE_B;
     eccles_rt_pools[POOL_B].cursor    = ECCLES_RT__REGBASE_B;
     eccles_rt_pools[POOL_B].shift     = eccles_rt__log2_exact(ECCLES_RT_BLOCK_B_SIZE);
+    eccles_rt_pools[POOL_B].usedBlocks = 0;
 
     eccles_rt_pools[POOL_C].offset    = ECCLES_RT__OFFSET_C;
     eccles_rt_pools[POOL_C].blockSize = ECCLES_RT_BLOCK_C_SIZE;
@@ -458,6 +515,7 @@ bool eccles_rtmem_init(void){
     eccles_rt_pools[POOL_C].regBase   = ECCLES_RT__REGBASE_C;
     eccles_rt_pools[POOL_C].cursor    = ECCLES_RT__REGBASE_C;
     eccles_rt_pools[POOL_C].shift     = eccles_rt__log2_exact(ECCLES_RT_BLOCK_C_SIZE);
+    eccles_rt_pools[POOL_C].usedBlocks = 0;
 
     if(eccles_rt_pools[POOL_A].shift == 0xFF || eccles_rt_pools[POOL_B].shift == 0xFF || eccles_rt_pools[POOL_C].shift == 0xFF){
         ECCLES_RT_LOG_LINE("eccles_rtmem: a block size is not a power of two, falling back to slower division math for that pool");
@@ -465,6 +523,24 @@ bool eccles_rtmem_init(void){
 
     eccles_rt_lock = (ECCLES_RT_MUTEX_T)ECCLES_RT_LOCK_INIT();
     (void)lockState; /* only declared for type-checking ECCLES_RT_LOCK_STATE_T exists; unused here */
+
+    if(!ECCLES_RT_MUTEX_VALID(eccles_rt_lock)){
+        /* an RTOS mutex/semaphore create call can fail (e.g. FreeRTOS's
+           heap is exhausted) - previously this went unnoticed and
+           eccles_rtmem_init() still reported success, after which every
+           eccles_rt_malloc/_free call would silently no-op via their own
+           ECCLES_RT_MUTEX_VALID guard, with nothing telling you why
+           nothing was ever being allocated. Report it here instead. */
+        ECCLES_RT_LOG_LINE("eccles_rtmem: lock/mutex creation failed in eccles_rtmem_init");
+#if defined(ECCLES_RT_MEM_USE_HEAP)
+        /* free the actual malloc()'d pointer, not the rounded-up one -
+           freeing anything else would be undefined behavior */
+        free(eccles_rt_pool_raw); eccles_rt_pool_raw = NULL; eccles_rt_pool = NULL;
+        free(eccles_rt_reg);      eccles_rt_reg      = NULL;
+#endif
+        return false; /* stays uninitialized - call again later to retry */
+    }
+
     eccles_rt_initialized = true;
     return true;
 }
@@ -488,18 +564,76 @@ uint8_t* eccles_rt_malloc(size_t size){
        see the reentrancy notes in eccles_rtmem.h). */
     ECCLES_RT_LOCK(eccles_rt_lock, lockState);
 
-    if(size <= ECCLES_RT_BLOCK_A_SIZE){
-        result = eccles_rt_getFree(1, POOL_A);
-    } else if(size <= ECCLES_RT_BLOCK_B_SIZE){
-        result = eccles_rt_getFree(1, POOL_B);
-    } else if(size <= ECCLES_RT_BLOCK_C_SIZE){
-        result = eccles_rt_getFree(1, POOL_C);
+    if(size <= ECCLES_RT_BLOCK_C_SIZE){
+        /* fits in a single block of some class. Start at the smallest
+           class that actually fits the request, then escalate to
+           progressively larger classes if that one has no free block
+           right now - never step down to a smaller class, since its
+           blocks might be too small to hold the request at all. This
+           means a small request doesn't fail just because pool A happens
+           to be full while B or C has room - it costs nothing extra when
+           the first attempt succeeds (the common case), since the loop
+           exits immediately on the first hit. */
+        static const uint8_t singleClassOrder[3] = { POOL_A, POOL_B, POOL_C };
+        uint8_t startIdx = (size <= ECCLES_RT_BLOCK_A_SIZE) ? 0 :
+                            (size <= ECCLES_RT_BLOCK_B_SIZE) ? 1 : 2;
+        uint8_t oi;
+        for(oi = startIdx; oi < 3 && result == NULL; oi++){
+            result = eccles_rt_getFree(1, singleClassOrder[oi]);
+        }
     } else {
-        /* bigger than one C block: try a contiguous multi-block run,
-           starting with the biggest block size and falling back to
-           smaller ones if that pool is too fragmented to satisfy it.
+        /* bigger than one C block: needs a contiguous multi-block run.
            This never combines blocks from two different pools into one
            allocation - each attempt is single-class only. */
+#if defined(ECCLES_RT_MALLOC_MIN_WASTE)
+        /* opt-in: try the class that wastes the fewest bytes on this
+           particular request first, falling back to the next-least-
+           wasteful class that's actually feasible (need <= 255) if the
+           first choice is too fragmented to satisfy it. This can pull
+           more blocks out of the SMALL pools for a single large request
+           than the default order would (e.g. many A-blocks instead of a
+           few C-blocks), which trades lower byte-waste on this call for
+           less spare capacity in the pool your frequent small
+           allocations actually depend on - see the ECCLES_RT_MALLOC_MIN_
+           WASTE note in eccles_rtmem.h before turning this on. */
+        eccles_rt__waste_candidate_t cand[3];
+        eccles_rt__waste_candidate_t t;
+        uint8_t ci, cj;
+        /* populate largest-class-first (C, B, A): the sort below is a
+           stable one (only swaps on a STRICT improvement), so when two
+           classes tie exactly on waste - e.g. a request that happens to
+           be a common multiple of more than one block size - the larger
+           of the tied classes wins and stays ahead of the tie-breaking
+           check below. That matches the same "prefer to leave the small
+           pools alone" bias the default (non-MIN_WASTE) ordering uses,
+           applied only as a tiebreaker here rather than the primary rule */
+        static const uint8_t candPool[3] = { POOL_C, POOL_B, POOL_A };
+        for(ci = 0; ci < 3; ci++){
+            uint8_t poolIdx = candPool[ci];
+            size_t bs = eccles_rt_pools[poolIdx].blockSize;
+            size_t need = size / bs + ((size % bs) ? 1 : 0);
+            cand[ci].poolIdx = poolIdx;
+            cand[ci].need = need;
+            cand[ci].feasible = (need <= 255);
+            cand[ci].waste = cand[ci].feasible ? (need * bs - size) : (size_t)-1;
+        }
+        /* fully unrolled 3-element insertion sort by ascending waste -
+           always exactly 3 candidates, so this is cheaper and more
+           predictable on a small MCU than a general sort routine */
+        if(cand[1].waste < cand[0].waste){ t = cand[0]; cand[0] = cand[1]; cand[1] = t; }
+        if(cand[2].waste < cand[1].waste){ t = cand[1]; cand[1] = cand[2]; cand[2] = t; }
+        if(cand[1].waste < cand[0].waste){ t = cand[0]; cand[0] = cand[1]; cand[1] = t; }
+        for(cj = 0; cj < 3 && result == NULL; cj++){
+            if(cand[cj].feasible){
+                result = eccles_rt_getFree((uint8_t)cand[cj].need, cand[cj].poolIdx);
+            }
+        }
+#else
+        /* default: largest-class-first. Tends to preserve the small
+           pools' block-count capacity for their intended job (frequent
+           small allocations) instead of spending it on one large
+           request, at the cost of possibly wasting more bytes on that
+           one request than a smaller-class choice would have. */
         static const uint8_t order[3] = { POOL_C, POOL_B, POOL_A };
         uint8_t oi;
         for(oi = 0; oi < 3 && result == NULL; oi++){
@@ -510,17 +644,22 @@ uint8_t* eccles_rt_malloc(size_t size){
                 result = eccles_rt_getFree((uint8_t)need, poolIdx);
             }
         }
-        if(result == NULL){
-            ECCLES_RT_LOG_LINE("eccles_rtmem: buffer allocation failed, no pool had a large enough contiguous run free");
-        }
+#endif
     }
 
     ECCLES_RT_UNLOCK(eccles_rt_lock, lockState);
+
+    /* logged AFTER unlocking - ECCLES_RT_LOG_LINE can be a slow I/O call
+       (Serial.println, printf, ...), which has no business running while
+       another task is blocked waiting on this same lock */
+    if(result == NULL){
+        ECCLES_RT_LOG_LINE("eccles_rtmem: allocation failed, no pool had a large enough contiguous run free");
+    }
     return result;
 }
 
-eccles_rt_free_status_t eccles_rt_free(uint8_t* buffer){
-    eccles_rt_free_status_t status;
+eccles_rt_status_t eccles_rt_free(uint8_t* buffer){
+    eccles_rt_status_t status;
     ECCLES_RT_LOCK_STATE_T lockState;
 
     if(buffer == NULL) return ECCLES_RT_FREE_NULL;
@@ -533,28 +672,152 @@ eccles_rt_free_status_t eccles_rt_free(uint8_t* buffer){
     ECCLES_RT_LOCK(eccles_rt_lock, lockState);
     status = eccles_rt_freeBuffer(buffer);
     ECCLES_RT_UNLOCK(eccles_rt_lock, lockState);
+
+    /* logged AFTER unlocking, same reasoning as eccles_rt_malloc above */
+    switch(status){
+        case ECCLES_RT_FREE_MISALIGNED:
+            ECCLES_RT_LOG_LINE("eccles_rtmem: eccles_rt_free pointer is not a block start, ignoring");
+            break;
+        case ECCLES_RT_FREE_ALREADY_FREE:
+            ECCLES_RT_LOG_LINE("eccles_rtmem: eccles_rt_free buffer already free, ignoring double free");
+            break;
+        case ECCLES_RT_FREE_MID_RUN:
+            ECCLES_RT_LOG_LINE("eccles_rtmem: eccles_rt_free pointer is mid-run, not a block start, ignoring");
+            break;
+        default:
+            break; /* OK / NULL / OUT_OF_RANGE / NOT_READY need no extra log line */
+    }
     return status;
+}
+
+uint8_t* eccles_rt_calloc(size_t count, size_t size){
+    size_t total;
+    uint8_t *result;
+
+    if(count == 0 || size == 0) return NULL;
+
+    /* overflow-safe multiply: if the multiply wrapped around, dividing
+       back out won't recover the original count */
+    total = count * size;
+    if(total / size != count) return NULL;
+
+    result = eccles_rt_malloc(total);
+    if(result != NULL){
+        memset(result, 0, total);
+    }
+    return result;
+}
+
+uint8_t* eccles_rt_realloc(uint8_t *ptr, size_t new_size){
+    eccles_rt_pool_t *p;
+    uint8_t rind, mb;
+    size_t oldCapacity;
+    eccles_rt_status_t st;
+    ECCLES_RT_LOCK_STATE_T lockState;
+    uint8_t *newPtr;
+
+    if(ptr == NULL) return eccles_rt_malloc(new_size);
+    if(new_size == 0){ eccles_rt_free(ptr); return NULL; }
+
+    if(!eccles_rt_initialized) return NULL;
+#if defined(ECCLES_RT_MEM_USE_HEAP)
+    if(eccles_rt_pool == NULL) return NULL;
+#endif
+    if(!ECCLES_RT_MUTEX_VALID(eccles_rt_lock)) return NULL;
+
+    /* look up ptr's currently-allocated capacity under its own short lock
+       section, separate from the eccles_rt_malloc/_free calls below (each
+       of which takes and releases the same lock internally). This
+       composes correctly and avoids any risk of a recursive-lock
+       deadlock, at the cost of not being one atomic critical section -
+       same as every other realloc() implementation, this function is not
+       safe to call concurrently with another thread freeing or
+       reallocating the SAME pointer. */
+    ECCLES_RT_LOCK(eccles_rt_lock, lockState);
+    st = eccles_rt__resolve(ptr, &p, &rind, &mb);
+    oldCapacity = (st == ECCLES_RT_FREE_OK) ? ((size_t)mb * p->blockSize) : 0;
+    ECCLES_RT_UNLOCK(eccles_rt_lock, lockState);
+
+    if(st != ECCLES_RT_FREE_OK){
+        /* an invalid pointer passed to realloc gets the same treatment as
+           an invalid free(): don't touch anything, report failure */
+        ECCLES_RT_LOG_LINE("eccles_rtmem: eccles_rt_realloc given a pointer this allocator doesn't recognize, ignoring");
+        return NULL;
+    }
+
+    if(new_size <= oldCapacity){
+        /* fits in the capacity already reserved - no copy or move needed */
+        return ptr;
+    }
+
+    newPtr = eccles_rt_malloc(new_size);
+    if(newPtr == NULL){
+        return NULL; /* ptr is untouched and still valid - do not free it here */
+    }
+
+    memcpy(newPtr, ptr, oldCapacity);
+    eccles_rt_free(ptr);
+    return newPtr;
+}
+
+uint8_t* eccles_rt_aligned_alloc(size_t alignment, size_t size){
+    if(alignment == 0 || (alignment & (alignment - 1)) != 0){
+        return NULL; /* alignment must be a power of two */
+    }
+    if(alignment > (size_t)ECCLES_RT_ALIGNMENT){
+        /* can't guarantee more than the built-in per-allocation alignment
+           without per-allocation offset bookkeeping this library doesn't
+           keep - see the note on this function in eccles_rtmem.h */
+        return NULL;
+    }
+    return eccles_rt_malloc(size); /* already aligned to ECCLES_RT_ALIGNMENT unconditionally */
+}
+
+bool eccles_rt_reset(void){
+    ECCLES_RT_LOCK_STATE_T lockState;
+
+    if(!eccles_rt_initialized || !ECCLES_RT_MUTEX_VALID(eccles_rt_lock)) return false;
+#if defined(ECCLES_RT_MEM_USE_HEAP)
+    if(eccles_rt_pool == NULL || eccles_rt_reg == NULL) return false;
+#endif
+
+    ECCLES_RT_LOCK(eccles_rt_lock, lockState);
+    {
+        uint16_t k;
+        for(k = 0; k < ECCLES_RT_TOTAL_BLOCKS; k++) eccles_rt_reg[k] = 0;
+    }
+    eccles_rt_pools[POOL_A].cursor     = ECCLES_RT__REGBASE_A;
+    eccles_rt_pools[POOL_A].usedBlocks = 0;
+    eccles_rt_pools[POOL_B].cursor     = ECCLES_RT__REGBASE_B;
+    eccles_rt_pools[POOL_B].usedBlocks = 0;
+    eccles_rt_pools[POOL_C].cursor     = ECCLES_RT__REGBASE_C;
+    eccles_rt_pools[POOL_C].usedBlocks = 0;
+    ECCLES_RT_UNLOCK(eccles_rt_lock, lockState);
+
+    return true;
 }
 
 eccles_rt_stats_t eccles_rt_get_stats(void){
     eccles_rt_stats_t st;
     ECCLES_RT_LOCK_STATE_T lockState;
-    uint8_t i;
     st.usedA = st.freeA = st.usedB = st.freeB = st.usedC = st.freeC = 0;
 
     if(!eccles_rt_initialized || !ECCLES_RT_MUTEX_VALID(eccles_rt_lock)) return st;
+
+    /* O(1): read the running usedBlocks counters getFree/freeBuffer keep
+       in sync, instead of rescanning the whole registry (up to 255
+       entries) under the lock on every call - this used to mean even a
+       cheap, frequent stats poll paid for the full O(N) scan while
+       holding the lock the whole time, which is exactly the kind of
+       thing you don't want blocking another task's malloc/free. */
     ECCLES_RT_LOCK(eccles_rt_lock, lockState);
-
-    for(i = 0; i < ECCLES_RT_POOL_A_COUNT; i++){
-        if(eccles_rt_reg[i] == 0) st.freeA++; else st.usedA++;
-    }
-    for(i = ECCLES_RT_POOL_A_COUNT; i < ECCLES_RT_POOL_A_COUNT + ECCLES_RT_POOL_B_COUNT; i++){
-        if(eccles_rt_reg[i] == 0) st.freeB++; else st.usedB++;
-    }
-    for(i = ECCLES_RT_POOL_A_COUNT + ECCLES_RT_POOL_B_COUNT; i < ECCLES_RT_TOTAL_BLOCKS; i++){
-        if(eccles_rt_reg[i] == 0) st.freeC++; else st.usedC++;
-    }
-
+    st.usedA = eccles_rt_pools[POOL_A].usedBlocks;
+    st.usedB = eccles_rt_pools[POOL_B].usedBlocks;
+    st.usedC = eccles_rt_pools[POOL_C].usedBlocks;
     ECCLES_RT_UNLOCK(eccles_rt_lock, lockState);
+
+    st.freeA = (uint8_t)(ECCLES_RT_POOL_A_COUNT - st.usedA);
+    st.freeB = (uint8_t)(ECCLES_RT_POOL_B_COUNT - st.usedB);
+    st.freeC = (uint8_t)(ECCLES_RT_POOL_C_COUNT - st.usedC);
     return st;
 }

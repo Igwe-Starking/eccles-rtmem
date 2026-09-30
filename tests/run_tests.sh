@@ -66,6 +66,8 @@ run "heap mode" -DECCLES_RT_MEM_USE_HEAP
 
 run "NO_LOCK" -DECCLES_RT_MEM_NO_LOCK
 
+run "MIN_WASTE strategy" -DECCLES_RT_MALLOC_MIN_WASTE
+
 run "weak-MCU-scale budget (1 KB) on host's default no-op lock fallback" \
     -DECCLES_RT_MEM_SIZE=1024ul -DECCLES_RT_BLOCK_A_SIZE=16ul -DECCLES_RT_BLOCK_B_SIZE=32ul -DECCLES_RT_BLOCK_C_SIZE=64ul
 
@@ -80,8 +82,17 @@ run "near-maximum block count (251 total, close to the 255 cap)" \
     -DECCLES_RT_POOL_A_PERCENT=24ul -DECCLES_RT_POOL_B_PERCENT=25ul
 
 run_smoke "minimum viable pool (1 block per class)" \
-    -DECCLES_RT_MEM_SIZE=48ul -DECCLES_RT_BLOCK_A_SIZE=8ul -DECCLES_RT_BLOCK_B_SIZE=16ul -DECCLES_RT_BLOCK_C_SIZE=32ul \
+    -DECCLES_RT_MEM_SIZE=64ul -DECCLES_RT_BLOCK_A_SIZE=8ul -DECCLES_RT_BLOCK_B_SIZE=16ul -DECCLES_RT_BLOCK_C_SIZE=32ul \
     -DECCLES_RT_POOL_A_PERCENT=16ul -DECCLES_RT_POOL_B_PERCENT=33ul
+
+run_smoke "RAM-tiered budget: simulated ATmega328P (2KB RAM -> 1KB budget)" \
+    -D__AVR_ATmega328P__
+
+run_smoke "RAM-tiered budget: simulated ATmega2560 (8KB RAM -> 2KB budget)" \
+    -D__AVR_ATmega2560__
+
+run_smoke "RAM-tiered budget: explicit ECCLES_RT_TOTAL_RAM_SIZE (200KB -> 5% -> 10KB)" \
+    -DECCLES_RT_TOTAL_RAM_SIZE=200000ul
 
 if [ "$FAILED" = "1" ]; then
     echo "SOME CONFIGURATIONS FAILED"
