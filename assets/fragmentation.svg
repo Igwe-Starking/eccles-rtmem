@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" role="img" aria-labelledby="ft fd">
+<title id="ft">Heap fragmentation versus fixed pools</title>
+<desc id="fd">A fragmented classic heap has 256 bytes free in total but its largest hole is only 48 bytes, so a 96 byte request returns NULL. In an EcclesRTLib pool of 128 byte blocks, any free block satisfies the same request.</desc>
+<style>.t{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif} .m{font-family:SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace}</style>
+<defs>
+<linearGradient id="bgf" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#111c33"/></linearGradient>
+<linearGradient id="acf" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+<radialGradient id="gvf" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#a78bfa" stop-opacity=".28"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
+<radialGradient id="gcf" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#22d3ee" stop-opacity=".22"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></radialGradient>
+<pattern id="dotsf" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#94a3b8" opacity=".14"/></pattern>
+</defs>
+<rect width="1000" height="560" rx="22" fill="url(#bgf)"/>
+<rect width="1000" height="560" rx="22" fill="url(#dotsf)"/>
+<text x="60" y="58" class="t" font-size="22" font-weight="700" fill="#e2e8f0">Classic heap, after weeks of alloc / free</text>
+<text x="60" y="84" class="m" font-size="14" fill="#94a3b8">toy heap · one cell = 16 bytes · grey = in use · dashed = free</text>
+<rect x="60.0" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="82.2" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="104.4" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="126.6" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="148.8" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="171.0" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="193.2" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="215.4" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="237.6" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="259.8" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="282.0" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="304.2" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="326.4" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="348.6" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="370.8" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="393.0" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="415.2" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="437.4" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="459.6" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="481.8" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="504.0" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="526.2" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="548.4" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="570.6" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="592.8" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="615.0" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="637.2" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="659.4" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="681.6" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="703.8" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="726.0" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="748.2" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="770.4" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="792.6" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="814.8" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="837.0" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="859.2" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="881.4" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<rect x="903.6" y="150" width="20.2" height="54" rx="3" fill="none" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="925.8" y="150" width="20.2" height="54" rx="3" fill="#475569"/>
+<text x="60" y="236" class="m" font-size="17" fill="#e2e8f0">256 bytes free in total.  Largest hole: <tspan fill="#f87171" font-weight="700">48 bytes</tspan>.</text>
+<rect x="60" y="256" width="352" height="40" rx="10" fill="#f87171" fill-opacity=".12" stroke="#f87171"/>
+<text x="76" y="282" class="m" font-size="17" fill="#f87171" font-weight="700">malloc(96)  →  NULL   ✗</text>
+<line x1="60" y1="330" x2="940" y2="330" stroke="#334155" stroke-dasharray="2 6"/>
+<text x="60" y="366" class="t" font-size="22" font-weight="700" fill="#e2e8f0">EcclesRTLib, same workload</text>
+<text x="60" y="390" class="m" font-size="14" fill="#94a3b8">pool B · 128-byte blocks</text>
+<rect x="60" y="404" width="96" height="54" rx="6" fill="#818cf8" opacity=".85"/>
+<rect x="164" y="404" width="96" height="54" rx="6" fill="#818cf8" opacity=".85"/>
+<rect x="268" y="404" width="96" height="54" rx="6" fill="none" stroke="#818cf8" stroke-width="1.6" stroke-dasharray="4 4"/>
+<rect x="372" y="404" width="96" height="54" rx="6" fill="#818cf8" opacity=".85"/>
+<rect x="476" y="404" width="96" height="54" rx="6" fill="#818cf8" opacity=".85"/>
+<rect x="580" y="404" width="96" height="54" rx="6" fill="#34d399" fill-opacity=".16" stroke="#34d399" stroke-width="2.5"/><text x="628.0" y="437" text-anchor="middle" class="m" font-size="15" font-weight="700" fill="#34d399">96 B ✓</text>
+<rect x="684" y="404" width="96" height="54" rx="6" fill="#818cf8" opacity=".85"/>
+<rect x="788" y="404" width="96" height="54" rx="6" fill="#818cf8" opacity=".85"/>
+<rect x="60" y="478" width="470" height="40" rx="10" fill="#34d399" fill-opacity=".12" stroke="#34d399"/>
+<text x="76" y="504" class="m" font-size="17" fill="#34d399" font-weight="700">eccles_rt_malloc(96)  →  block #6   ✓</text>
+<text x="940" y="546" text-anchor="end" class="m" font-size="12" fill="#94a3b8">illustrative</text>
+</svg>

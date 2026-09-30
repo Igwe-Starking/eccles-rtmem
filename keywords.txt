@@ -7,7 +7,7 @@
 #######################################
 
 eccles_rt_stats_t	KEYWORD1
-eccles_rt_free_status_t	KEYWORD1
+eccles_rt_status_t	KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
@@ -15,7 +15,11 @@ eccles_rt_free_status_t	KEYWORD1
 
 eccles_rtmem_init	KEYWORD2
 eccles_rt_malloc	KEYWORD2
+eccles_rt_calloc	KEYWORD2
+eccles_rt_realloc	KEYWORD2
+eccles_rt_aligned_alloc	KEYWORD2
 eccles_rt_free	KEYWORD2
+eccles_rt_reset	KEYWORD2
 eccles_rt_get_stats	KEYWORD2
 
 #######################################
@@ -27,9 +31,11 @@ ECCLES_RT_FREE_NULL	LITERAL1
 ECCLES_RT_FREE_NOT_READY	LITERAL1
 ECCLES_RT_FREE_OUT_OF_RANGE	LITERAL1
 ECCLES_RT_FREE_MISALIGNED	LITERAL1
-ECCLES_RT_FREE_DOUBLE_FREE	LITERAL1
+ECCLES_RT_FREE_ALREADY_FREE	LITERAL1
 ECCLES_RT_FREE_MID_RUN	LITERAL1
 ECCLES_RT_MEM_SIZE	LITERAL1
+ECCLES_RT_TOTAL_RAM_SIZE	LITERAL1
 ECCLES_RT_MEM_USE_HEAP	LITERAL1
 ECCLES_RT_MEM_NO_LOCK	LITERAL1
+ECCLES_RT_MALLOC_MIN_WASTE	LITERAL1
 ECCLES_RT_ALIGNMENT	LITERAL1

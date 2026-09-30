@@ -3,6 +3,33 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-09-28
+
+A deep audit pass: RAM-aware sizing, three new allocation functions, and several correctness fixes. No breaking changes -- every renamed symbol keeps its old name as a `#define`/`typedef` alias.
+
+### Added
+- **RAM-aware default sizing.** The old flat 1 KB / 20 KB split was genuinely too coarse -- 1 KB is half the RAM on a 2 KB AVR but a rounding error on a 200 KB ESP32. Budget is now derived, in priority order, from: an explicit `ECCLES_RT_TOTAL_RAM_SIZE` you declare, or a built-in lookup table of common chips (classic 8-bit Arduino/LaunchPad parts, keyed off the compiler's own exact-RAM macro), both feeding a tiered percentage (50% under 4 KB, 25% under 10 KB, 10% under 100 KB, 5% otherwise); or the original coarse per-family guess as a last resort. Documented rough edge: a small non-monotonic step exactly at each tier boundary.
+- **`eccles_rt_calloc()`, `eccles_rt_realloc()`, `eccles_rt_aligned_alloc()`.** Mirror the standard library's contracts as closely as a fixed-pool allocator allows -- overflow-safe `calloc`, a `realloc` that never invalidates the original pointer on failure, and an `aligned_alloc` limited to `ECCLES_RT_ALIGNMENT` (documented, not silently wrong).
+- **`eccles_rt_reset()`.** Wipes every pool's bookkeeping back to fully-free in one call, without reallocating anything or requiring another `eccles_rtmem_init()`. Meant for "nothing else still depends on prior allocations" situations (between test cases, a deliberate subsystem soft-reset) -- it does not zero pool bytes and does not protect against use of pointers issued before the reset.
+- **Small-allocation escalation.** A request that fits pool A used to only ever try pool A. It now tries the smallest class that fits and escalates upward (A -> B -> C) if that class is full -- symmetric with the existing oversized-request fallback.
+- **`ECCLES_RT_MALLOC_MIN_WASTE`.** Opt-in alternate strategy for oversized (multi-block) requests: picks the class that wastes the fewest bytes on that specific request, instead of always trying the largest class first. Off by default, since minimizing per-call waste and preserving small-pool capacity for future allocations are genuinely in tension -- see the README for a worked example.
+- Three more test configurations (12 total): the `MIN_WASTE` strategy, and RAM-tiered detection for a simulated ATmega328P, ATmega2560, and an explicit `ECCLES_RT_TOTAL_RAM_SIZE`.
+
+### Fixed
+- **`ECCLES_RT_MEM_SIZE` could silently be violated.** A budget too small to give every class its guaranteed minimum of one block used to reserve *more* bytes than asked for instead of failing -- `ECCLES_RT_MEM_SIZE=1` with default block sizes silently reserved 112 bytes. Now a compile-time `#error`.
+- **Alignment wasn't actually guaranteed past the first block in a class smaller than `ECCLES_RT_ALIGNMENT`.** Verified: block 2 of a 4-byte class landed 4 bytes off an 8-byte alignment. Fixed with a compile-time check that every block size is a multiple of `ECCLES_RT_ALIGNMENT`, plus a portable heap-mode fix (manual over-allocate + round up).
+- **A failed RTOS mutex/semaphore creation went unreported.** If `ECCLES_RT_LOCK_INIT()` failed (e.g. FreeRTOS's heap exhausted), `eccles_rtmem_init()` used to still report success, after which every call silently no-op'd with no indication why. Now checked and reported (`eccles_rtmem_init()` returns `false`).
+- **Overly broad ARM lock detection.** The generic-ARM branch matched any `__arm__`/`__ARM_ARCH` target and used Cortex-M-only PRIMASK instructions unconditionally -- a false match on Cortex-A/R or older ARM7TDMI cores would have meant an invalid instruction. Narrowed to actual Cortex-M architecture macros; anything else now falls through to the no-op fallback.
+- **Debug logging used to run inside the lock.** A slow `ECCLES_RT_LOG_LINE` call (`Serial.println`, `printf`, ...) blocked every other task/ISR waiting on the same lock for its whole duration. Moved to after unlock in both `eccles_rt_malloc` and `eccles_rt_free`.
+- **`eccles_rt_get_stats()` used to rescan the whole registry (up to 255 entries) under the lock on every call.** Replaced with running counters maintained incrementally by malloc/free, making stats O(1) and shortening the locked section -- verified against 4M+ stress-test operations with zero drift.
+- `#warning` on an unset `ECCLES_RT_MEM_SIZE` removed -- GCC/Clang classify it as a warning diagnostic, so `-Werror` (ESP-IDF's/PlatformIO's stricter presets) turned a friendly reminder into a hard build failure. The guidance still lives in comments.
+- Documentation corrected: block sizes were documented as "must be a power of two" when the code already tolerates (and is tested against) any positive multiple of `ECCLES_RT_ALIGNMENT`, just slower via division.
+
+### Changed
+- `eccles_rt_free_status_t` renamed to `eccles_rt_status_t` (old name kept as a `typedef` alias).
+- `ECCLES_RT_FREE_DOUBLE_FREE` renamed to `ECCLES_RT_FREE_ALREADY_FREE`, since the registry can only tell you a block is *currently* marked free, not whether this is literally the same allocation being freed twice versus an unrelated stale pointer -- the old name implied a certainty the check can't provide. Old name kept as a `#define` alias.
+- `eccles_rtmem_init()`'s idempotency claim is now precise: safe for repeat calls from the same initializing context, not for concurrent calls from two contexts at once (there's no lock protecting init itself, since the lock doesn't exist until init creates it).
+
 ## [1.0.0] - 2026-09-24
 
 First public release. Portable plain-C rewrite of the original ESP-IDF-only allocator, hardened through a review pass.
@@ -12,7 +39,7 @@ First public release. Portable plain-C rewrite of the original ESP-IDF-only allo
 - Optional heap-backed pool (`ECCLES_RT_MEM_USE_HEAP`).
 - MCU-family detection for the default memory budget (1 KB vs. 20 KB).
 - Automatic locking backends: Zephyr, FreeRTOS, CMSIS-RTOS2, Pico SDK, AVR, MSP430, Microchip XC16/XC32, generic Cortex-M; `ECCLES_RT_MEM_NO_LOCK` and a manual override.
-- `eccles_rt_free()` returns `eccles_rt_free_status_t`, reporting *why* a pointer was rejected.
+- `eccles_rt_free()` returns a status enum, reporting *why* a pointer was rejected.
 - `eccles_rt_get_stats()` for per-pool used/free block counts.
 - Optional debug logging (`ECCLES_RT_DEBUG`, `ECCLES_RT_LOG_LINE`).
 - `eccles_rtmem_config.h` configuration template picked up via `__has_include`.

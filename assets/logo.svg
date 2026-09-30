@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="EcclesRTLib logo">
+<g transform="translate(0,0) scale(1)">
+<rect width="96" height="96" rx="22" fill="#0f172a" stroke="#334155" stroke-width="2"/>
+<rect x="16.00" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity="1"/>
+<rect x="27.17" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity=".28"/>
+<rect x="38.33" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity="1"/>
+<rect x="49.50" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity="1"/>
+<rect x="60.67" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity=".28"/>
+<rect x="71.83" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity="1"/>
+<rect x="16.00" y="40" width="19.33" height="16" rx="3" fill="#818cf8" opacity="1"/>
+<rect x="38.33" y="40" width="19.33" height="16" rx="3" fill="#818cf8" opacity="1"/>
+<rect x="60.67" y="40" width="19.33" height="16" rx="3" fill="#818cf8" opacity=".28"/>
+<rect x="16.00" y="59" width="30.50" height="16" rx="3" fill="#a78bfa" opacity="1"/>
+<rect x="49.50" y="59" width="30.50" height="16" rx="3" fill="#a78bfa" opacity=".28"/>
+</g>
+</svg>

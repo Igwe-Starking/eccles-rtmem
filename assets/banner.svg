@@ -1,40 +1,69 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-labelledby="t d">
-  <title id="t">EcclesRTLib</title>
-  <desc id="d">Three fixed-size memory pools of small, medium and large blocks under the title EcclesRTLib.</desc>
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0b1220"/>
-      <stop offset="1" stop-color="#111c33"/>
-    </linearGradient>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#22d3ee"/>
-      <stop offset="1" stop-color="#a78bfa"/>
-    </linearGradient>
-  </defs>
-  <rect width="1280" height="400" fill="url(#bg)"/>
-
-  <text x="80" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="88" font-weight="800" fill="url(#accent)">EcclesRTLib</text>
-  <text x="84" y="205" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" fill="#e2e8f0">Deterministic memory for chips that can't afford surprises.</text>
-  <text x="84" y="250" font-family="Consolas, Menlo, monospace" font-size="22" fill="#64748b">fixed pools · zero fragmentation · validated frees · plain C99</text>
-
-  <!-- pool A: many small blocks -->
-  <g fill="#22d3ee">
-    <rect x="80"  y="290" width="24" height="24" rx="4"/><rect x="110" y="290" width="24" height="24" rx="4"/>
-    <rect x="140" y="290" width="24" height="24" rx="4" opacity=".35"/><rect x="170" y="290" width="24" height="24" rx="4"/>
-    <rect x="200" y="290" width="24" height="24" rx="4"/><rect x="230" y="290" width="24" height="24" rx="4" opacity=".35"/>
-    <rect x="260" y="290" width="24" height="24" rx="4"/><rect x="290" y="290" width="24" height="24" rx="4"/>
-  </g>
-  <!-- pool B: medium blocks -->
-  <g fill="#818cf8">
-    <rect x="330" y="290" width="48" height="24" rx="4"/><rect x="384" y="290" width="48" height="24" rx="4" opacity=".35"/>
-    <rect x="438" y="290" width="48" height="24" rx="4"/><rect x="492" y="290" width="48" height="24" rx="4"/>
-  </g>
-  <!-- pool C: large blocks -->
-  <g fill="#a78bfa">
-    <rect x="580" y="290" width="96" height="24" rx="4"/><rect x="682" y="290" width="96" height="24" rx="4"/>
-    <rect x="784" y="290" width="96" height="24" rx="4" opacity=".35"/>
-  </g>
-  <text x="80"  y="342" font-family="Consolas, Menlo, monospace" font-size="16" fill="#94a3b8">pool A · small</text>
-  <text x="330" y="342" font-family="Consolas, Menlo, monospace" font-size="16" fill="#94a3b8">pool B · medium</text>
-  <text x="580" y="342" font-family="Consolas, Menlo, monospace" font-size="16" fill="#94a3b8">pool C · large</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-labelledby="bt bd">
+<title id="bt">EcclesRTLib</title>
+<desc id="bd">EcclesRTLib RuntimeMemory: a fixed-pool memory allocator for microcontrollers. Three pools of fixed-size blocks, some allocated and some free.</desc>
+<style>
+.t{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif} .m{font-family:SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace}
+@keyframes f{0%,42%{opacity:1}50%,88%{opacity:.16}96%,100%{opacity:1}}
+.b{animation:f 7s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.b{animation:none}}
+</style>
+<defs>
+<linearGradient id="bgb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#111c33"/></linearGradient>
+<linearGradient id="acb" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+<radialGradient id="gvb" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#a78bfa" stop-opacity=".28"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
+<radialGradient id="gcb" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#22d3ee" stop-opacity=".22"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></radialGradient>
+<pattern id="dotsb" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#94a3b8" opacity=".14"/></pattern>
+</defs>
+<rect width="1280" height="400" fill="url(#bgb)"/>
+<rect width="1280" height="400" fill="url(#dotsb)"/>
+<circle cx="1120" cy="60" r="330" fill="url(#gvb)"/>
+<circle cx="120" cy="380" r="300" fill="url(#gcb)"/>
+<g transform="translate(80,66) scale(0.95)">
+<rect width="96" height="96" rx="22" fill="#0f172a" stroke="#334155" stroke-width="2"/>
+<rect x="16.00" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity="1"/>
+<rect x="27.17" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity=".28"/>
+<rect x="38.33" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity="1"/>
+<rect x="49.50" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity="1"/>
+<rect x="60.67" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity=".28"/>
+<rect x="71.83" y="21" width="8.17" height="16" rx="3" fill="#22d3ee" opacity="1"/>
+<rect x="16.00" y="40" width="19.33" height="16" rx="3" fill="#818cf8" opacity="1"/>
+<rect x="38.33" y="40" width="19.33" height="16" rx="3" fill="#818cf8" opacity="1"/>
+<rect x="60.67" y="40" width="19.33" height="16" rx="3" fill="#818cf8" opacity=".28"/>
+<rect x="16.00" y="59" width="30.50" height="16" rx="3" fill="#a78bfa" opacity="1"/>
+<rect x="49.50" y="59" width="30.50" height="16" rx="3" fill="#a78bfa" opacity=".28"/>
+</g>
+<text x="186" y="142" class="t" font-size="76" font-weight="800" fill="url(#acb)">EcclesRTLib</text>
+<text x="82" y="214" class="t" font-size="30" fill="#e2e8f0">Predictable memory for chips</text>
+<text x="82" y="252" class="t" font-size="30" fill="#e2e8f0">that can't afford surprises.</text>
+<rect x="80.0" y="277" width="128.9" height="38" rx="19" fill="#0f172a" stroke="#334155"/><text x="144.43" y="302" text-anchor="middle" font-family="SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace" font-size="17" fill="#e2e8f0">plain C99</text>
+<rect x="220.9" y="277" width="213.2" height="38" rx="19" fill="#0f172a" stroke="#334155"/><text x="327.45000000000005" y="302" text-anchor="middle" font-family="SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace" font-size="17" fill="#e2e8f0">zero dependencies</text>
+<rect x="446.0" y="277" width="139.4" height="38" rx="19" fill="#0f172a" stroke="#334155"/><text x="515.74" y="302" text-anchor="middle" font-family="SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace" font-size="17" fill="#e2e8f0">RTOS-aware</text>
+<rect x="790" y="56" width="400" height="288" rx="20" fill="#0f172a" fill-opacity=".9" stroke="#334155"/>
+<text x="814" y="92" class="m" font-size="13" fill="#94a3b8">3 pools · fixed blocks · no heap</text>
+<circle cx="1160" cy="88" r="5" fill="#34d399"/>
+<text x="814" y="118" class="m" font-size="12" fill="#94a3b8" letter-spacing="1.5">POOL A</text>
+<rect x="814.0" y="128" width="24.8" height="28" rx="4" fill="#22d3ee"/>
+<rect x="843.8" y="128" width="24.8" height="28" rx="4" fill="#22d3ee"/>
+<rect x="873.5" y="128" width="24.8" height="28" rx="4" fill="#22d3ee"/>
+<rect x="903.2" y="128" width="24.8" height="28" rx="4" fill="#22d3ee" class="b" style="animation-duration:9.1s;animation-delay:-0.8s"/>
+<rect x="933.0" y="128" width="24.8" height="28" rx="4" fill="#22d3ee"/>
+<rect x="962.8" y="128" width="24.8" height="28" rx="4" fill="#22d3ee"/>
+<rect x="992.5" y="128" width="24.8" height="28" rx="4" fill="#22d3ee" class="b" style="animation-duration:8.4s;animation-delay:-5.5s"/>
+<rect x="1022.2" y="128" width="24.8" height="28" rx="4" fill="#22d3ee" class="b" style="animation-duration:5.6s;animation-delay:-4.8s"/>
+<rect x="1052.0" y="128" width="24.8" height="28" rx="4" fill="#22d3ee" class="b" style="animation-duration:6.4s;animation-delay:-2.2s"/>
+<rect x="1081.8" y="128" width="24.8" height="28" rx="4" fill="#22d3ee"/>
+<rect x="1111.5" y="128" width="24.8" height="28" rx="4" fill="#22d3ee" class="b" style="animation-duration:7.8s;animation-delay:-5.8s"/>
+<rect x="1141.2" y="128" width="24.8" height="28" rx="4" fill="#22d3ee" class="b" style="animation-duration:8.5s;animation-delay:-4.1s"/>
+<text x="814" y="184" class="m" font-size="12" fill="#94a3b8" letter-spacing="1.5">POOL B</text>
+<rect x="814.0" y="194" width="54.5" height="28" rx="4" fill="#818cf8"/>
+<rect x="873.5" y="194" width="54.5" height="28" rx="4" fill="#818cf8" class="b" style="animation-duration:8.7s;animation-delay:-2.8s"/>
+<rect x="933.0" y="194" width="54.5" height="28" rx="4" fill="#818cf8"/>
+<rect x="992.5" y="194" width="54.5" height="28" rx="4" fill="#818cf8" class="b" style="animation-duration:7.3s;animation-delay:-7.6s"/>
+<rect x="1052.0" y="194" width="54.5" height="28" rx="4" fill="#818cf8" class="b" style="animation-duration:9.8s;animation-delay:-7.6s"/>
+<rect x="1111.5" y="194" width="54.5" height="28" rx="4" fill="#818cf8" class="b" style="animation-duration:6.4s;animation-delay:-8.2s"/>
+<text x="814" y="250" class="m" font-size="12" fill="#94a3b8" letter-spacing="1.5">POOL C</text>
+<rect x="814.0" y="260" width="114.0" height="28" rx="4" fill="#a78bfa" class="b" style="animation-duration:9.9s;animation-delay:-3.6s"/>
+<rect x="933.0" y="260" width="114.0" height="28" rx="4" fill="#a78bfa" class="b" style="animation-duration:8.3s;animation-delay:-7.0s"/>
+<rect x="1052.0" y="260" width="114.0" height="28" rx="4" fill="#a78bfa"/>
+<text x="814" y="322" class="m" font-size="13" fill="#34d399">eccles_rt_free(p) → ECCLES_RT_FREE_OK</text>
 </svg>

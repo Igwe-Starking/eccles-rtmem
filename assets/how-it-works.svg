@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 470" width="1000" height="470" role="img" aria-labelledby="ht hd">
+<title id="ht">How EcclesRTLib splits memory</title>
+<desc id="hd">One memory budget is split into three pools of fixed-size blocks: A small at 25 percent, B medium at 25 percent and C large at 50 percent. Each request goes to the smallest class that fits; requests larger than one large block take a contiguous run of blocks from a single pool.</desc>
+<style>.t{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif} .m{font-family:SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace}</style>
+<defs>
+<linearGradient id="bgh" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#111c33"/></linearGradient>
+<linearGradient id="ach" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+<radialGradient id="gvh" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#a78bfa" stop-opacity=".28"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
+<radialGradient id="gch" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#22d3ee" stop-opacity=".22"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></radialGradient>
+<pattern id="dotsh" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#94a3b8" opacity=".14"/></pattern>
+</defs>
+<rect width="1000" height="470" rx="22" fill="url(#bgh)"/>
+<rect width="1000" height="470" rx="22" fill="url(#dotsh)"/>
+<text x="50" y="52" class="m" font-size="14" fill="#94a3b8" letter-spacing="1">ECCLES_RT_MEM_SIZE  ·  one budget, three pools</text>
+<rect x="50.0" y="84" width="221.0" height="64" rx="10" fill="#22d3ee" fill-opacity=".12" stroke="#22d3ee" stroke-width="1.6"/>
+<rect x="59.5" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="72.3" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="85.1" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="97.9" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".3"/>
+<rect x="110.8" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="123.6" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="136.4" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="149.2" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="162.0" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="174.8" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".3"/>
+<rect x="187.6" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="200.4" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="213.2" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".3"/>
+<rect x="226.1" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="238.9" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<rect x="251.7" y="94" width="9.8" height="44" rx="3" fill="#22d3ee" opacity=".95"/>
+<text x="160.5" y="178" text-anchor="middle" class="t" font-size="19" font-weight="700" fill="#22d3ee">Pool A · small</text>
+<text x="160.5" y="200" text-anchor="middle" class="m" font-size="13" fill="#94a3b8">25% · blocks 16 B · 64 B</text>
+<rect x="275.0" y="84" width="221.0" height="64" rx="10" fill="#818cf8" fill-opacity=".12" stroke="#818cf8" stroke-width="1.6"/>
+<rect x="284.5" y="94" width="22.6" height="44" rx="3" fill="#818cf8" opacity=".95"/>
+<rect x="310.1" y="94" width="22.6" height="44" rx="3" fill="#818cf8" opacity=".95"/>
+<rect x="335.8" y="94" width="22.6" height="44" rx="3" fill="#818cf8" opacity=".3"/>
+<rect x="361.4" y="94" width="22.6" height="44" rx="3" fill="#818cf8" opacity=".95"/>
+<rect x="387.0" y="94" width="22.6" height="44" rx="3" fill="#818cf8" opacity=".95"/>
+<rect x="412.6" y="94" width="22.6" height="44" rx="3" fill="#818cf8" opacity=".3"/>
+<rect x="438.2" y="94" width="22.6" height="44" rx="3" fill="#818cf8" opacity=".95"/>
+<rect x="463.9" y="94" width="22.6" height="44" rx="3" fill="#818cf8" opacity=".95"/>
+<text x="385.5" y="178" text-anchor="middle" class="t" font-size="19" font-weight="700" fill="#818cf8">Pool B · medium</text>
+<text x="385.5" y="200" text-anchor="middle" class="m" font-size="13" fill="#94a3b8">25% · blocks 32 B · 128 B</text>
+<rect x="500.0" y="84" width="446.0" height="64" rx="10" fill="#a78bfa" fill-opacity=".12" stroke="#a78bfa" stroke-width="1.6"/>
+<rect x="509.5" y="94" width="50.8" height="44" rx="3" fill="#a78bfa" opacity=".95"/>
+<rect x="563.2" y="94" width="50.8" height="44" rx="3" fill="#a78bfa" opacity=".3"/>
+<rect x="617.0" y="94" width="50.8" height="44" rx="3" fill="#a78bfa" opacity=".95"/>
+<rect x="670.8" y="94" width="50.8" height="44" rx="3" fill="#a78bfa" opacity=".95"/>
+<rect x="724.5" y="94" width="50.8" height="44" rx="3" fill="#a78bfa" opacity=".95"/>
+<rect x="778.2" y="94" width="50.8" height="44" rx="3" fill="#a78bfa" opacity=".95"/>
+<rect x="832.0" y="94" width="50.8" height="44" rx="3" fill="#a78bfa" opacity=".3"/>
+<rect x="885.8" y="94" width="50.8" height="44" rx="3" fill="#a78bfa" opacity=".95"/>
+<text x="723.0" y="178" text-anchor="middle" class="t" font-size="19" font-weight="700" fill="#a78bfa">Pool C · large</text>
+<text x="723.0" y="200" text-anchor="middle" class="m" font-size="13" fill="#94a3b8">50% · blocks 64 B · 256 B</text>
+<text x="500" y="278" text-anchor="middle" class="t" font-size="16" fill="#e2e8f0">Each request goes to the <tspan font-weight="700" fill="#22d3ee">smallest class that fits</tspan>. Class full? It escalates <tspan class="m">A → B → C</tspan>.</text>
+<text x="500" y="302" text-anchor="middle" class="t" font-size="15" fill="#94a3b8">Bigger than one C block? It takes a contiguous run from a single pool. Pools are never mixed.</text>
+<rect x="60" y="330" width="200" height="66" rx="12" fill="#0f172a" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="160" y="358" text-anchor="middle" class="m" font-size="17" font-weight="700" fill="#e2e8f0">malloc(40)</text>
+<text x="160" y="380" text-anchor="middle" class="m" font-size="14" fill="#22d3ee">→ pool A</text>
+<rect x="290" y="330" width="200" height="66" rx="12" fill="#0f172a" stroke="#818cf8" stroke-width="1.6"/>
+<text x="390" y="358" text-anchor="middle" class="m" font-size="17" font-weight="700" fill="#e2e8f0">malloc(100)</text>
+<text x="390" y="380" text-anchor="middle" class="m" font-size="14" fill="#818cf8">→ pool B</text>
+<rect x="520" y="330" width="200" height="66" rx="12" fill="#0f172a" stroke="#a78bfa" stroke-width="1.6"/>
+<text x="620" y="358" text-anchor="middle" class="m" font-size="17" font-weight="700" fill="#e2e8f0">malloc(200)</text>
+<text x="620" y="380" text-anchor="middle" class="m" font-size="14" fill="#a78bfa">→ pool C</text>
+<rect x="750" y="330" width="200" height="66" rx="12" fill="#0f172a" stroke="#a78bfa" stroke-width="1.6"/>
+<text x="850" y="358" text-anchor="middle" class="m" font-size="17" font-weight="700" fill="#e2e8f0">malloc(700)</text>
+<text x="850" y="380" text-anchor="middle" class="m" font-size="14" fill="#a78bfa">→ 3 blocks in C</text>
+<text x="500" y="446" text-anchor="middle" class="m" font-size="12" fill="#94a3b8">block counts illustrative · sizes shown for the 1 KB / 20 KB default budgets · requests use the 20 KB defaults</text>
+</svg>
