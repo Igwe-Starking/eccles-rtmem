@@ -4,7 +4,7 @@
 # block count, and a minimum-viable pool) - addresses the review item
 # "test multiple configurations, not only the default".
 #
-# Usage: ./run_tests.sh
+# Usage: bash run_tests.sh
 cd "$(dirname "$0")" || exit 1
 
 CC=${CC:-gcc}

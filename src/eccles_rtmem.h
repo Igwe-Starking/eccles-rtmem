@@ -730,16 +730,22 @@ uint8_t* eccles_rt_calloc(size_t count, size_t size);
    code already assumes, rather than the alternative of returning a valid
    zero-size allocation).
 
-   Implementation note: this is NOT an in-place block-run extension (it
-   doesn't try to grow the existing allocation into adjacent free blocks
-   in its own pool) - growing always means allocate-new + copy + free-old.
-   That's simpler and smaller (good for flash-constrained parts) and
-   handles every case uniformly, including when the new size needs a
-   different pool class than the old one, at the cost of never being able
-   to resize in place even when there's free space immediately after the
-   existing allocation that could have been used directly. Shrinking to a
-   size that still fits the SAME already-allocated capacity is a fast
-   path: the original pointer is returned unchanged, no copy needed. */
+   Implementation note: resizing happens IN PLACE whenever it can, inside
+   one critical section. The run's block count is recomputed for new_size
+   in the SAME pool:
+     - fewer blocks: the trailing excess blocks are released back to the
+       pool immediately (bytes are not zeroed, same as free) and the
+       pointer is returned unchanged;
+     - same block count: pointer returned unchanged, nothing touched;
+     - more blocks: the boundary right after the run is checked, and if
+       the extra blocks are free and still inside the same pool they are
+       absorbed and the pointer is returned unchanged - no copy;
+     - otherwise (neighbour in use, pool boundary, or the request is
+       bigger than the whole pool): allocate-new + copy + free-old, which
+       may land in a different class. On failure the original is intact.
+   A shrunk allocation stays in its original class (a 5-block C run
+   shrunk to 10 bytes becomes one C block, not an A block) - that is the
+   price of never copying on a shrink. */
 uint8_t* eccles_rt_realloc(uint8_t *ptr, size_t new_size);
 
 /* LIMITED aligned_alloc() equivalent - NOT a general one. Every pointer

@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-22d3ee.svg)](LICENSE)
 [![C99](https://img.shields.io/badge/C-99-a78bfa.svg)](#)
 [![Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen.svg)](#)
-[![Version](https://img.shields.io/badge/version-1.1.0-818cf8.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.0.0-818cf8.svg)](CHANGELOG.md)
 [![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-ea4aaa.svg)](https://github.com/sponsors/igwe-starking)
 
 ### `malloc()` works great — until hour 300, when your device quietly dies.
@@ -86,6 +86,16 @@ One memory budget, three pools of fixed-size blocks. Each request goes to the sm
 <img src="assets/how-it-works.svg" alt="EcclesRTLib splits one memory budget into three pools: small (25%), medium (25%) and large (50%), each request routed to the smallest class that fits" width="100%">
 
 Everything is decided at compile time: pool sizes, block counts, bookkeeping. Block sizes should be powers of two, since the hot path then uses shifts instead of multiply/divide — real savings on an AVR with no hardware multiplier. A non-power-of-two size still works, just via plain division. Invalid configurations stop the build with a clear `#error`, not a runtime mystery.
+
+## 🚀 v2.0.0: the search got a lot smarter
+
+The algorithm looks the same from the outside — fixed pools, circular first-fit, same return values — but the engine underneath changed:
+
+- **Bitmap-driven search.** A packed occupancy bitmap (≤ 32 bytes total) rides alongside the block registry. Finding the next free block, or the end of a free run, costs one `__builtin_ctzll` per 64 blocks instead of a byte-by-byte scan. Where something lands is byte-for-byte identical to v1.x — this only changes how fast the answer is found.
+- **A full pool now rejects in O(1).** A maintained `usedBlocks` counter means a pool with too little free space never gets scanned at all — which is what makes 1.1.0's small-allocation escalation (A → B → C) cheap even when the earlier pools are jammed.
+- **`eccles_rt_realloc()` resizes in place.** Shrinking releases the excess tail blocks on the spot; growing absorbs free neighbour blocks directly after the run, in the same pool. Only a blocked neighbour or a pool boundary falls back to allocate + copy + free.
+
+<sub>No renamed or removed symbols — every v1.x call site still compiles. The major-version bump is because `realloc`'s observable behavior changed (it can now resize in place instead of always copying on growth). Full details, including why that's a `2.0.0` and not a `1.2.0`, are in the <a href="CHANGELOG.md">changelog</a>.</sub>
 
 ## 📐 Sized for your chip, not a guess
 
@@ -199,7 +209,7 @@ make test       # 12 configurations: default, heap mode, NO_LOCK, MIN_WASTE, 1 K
 make sanitize    # the same matrix under AddressSanitizer + UndefinedBehaviorSanitizer
 ```
 
-The suite includes 200,000-operation randomized stress runs where every live buffer carries a unique canary pattern that's re-verified before each free, plus `eccles_rt_get_stats()` invariant checks throughout. It's how a genuine out-of-bounds write and an incomplete alignment guarantee were both found and fixed — see the [changelog](CHANGELOG.md).
+The suite includes 500,000-operation randomized stress runs where every live buffer carries a unique canary pattern that's re-verified before each free, plus `eccles_rt_get_stats()` invariant checks throughout. For 2.0.0 that was additionally pushed to 2,000,000 operations against the default, near-255-block, and `MIN_WASTE` configurations — all clean under the sanitizers. It's how a genuine out-of-bounds write and an incomplete alignment guarantee were both found and fixed in earlier releases — see the [changelog](CHANGELOG.md).
 
 ## 🚲 Where this came from
 

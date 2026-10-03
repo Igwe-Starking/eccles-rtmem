@@ -278,13 +278,13 @@ contracts as closely as makes sense for a fixed-pool allocator:
   classically common bug in naive reallocation code is assuming a failed
   `realloc` already freed the old pointer. `realloc(NULL, size)` behaves
   like `malloc(size)`; `realloc(ptr, 0)` frees `ptr` and returns `NULL`.
-  Shrinking (or growing within the same already-allocated capacity) is a
-  fast path — same pointer returned, no copy. Growing past that capacity
-  always means allocate-new + copy + free-old; this does **not** attempt to
-  extend a run in place into adjacent free blocks, which keeps the
-  implementation small and uniform across every case (including when the
-  new size needs a different pool class entirely) at the cost of a copy
-  that an in-place extension could sometimes have avoided.
+  Resizing is done **in place** whenever possible, in one critical section:
+  shrinking releases the trailing blocks back to the pool immediately,
+  growing checks the boundary right after the run and absorbs the next
+  blocks if they are free and inside the same pool — same pointer returned,
+  no copy either way. Only when the neighbour is in use (or the pool ends)
+  does it fall back to allocate-new + copy + free-old, which may move the
+  allocation to a different class.
 - **`eccles_rt_aligned_alloc`** is a **limited** equivalent, not a general
   one: every allocation is already aligned to `ECCLES_RT_ALIGNMENT`
   unconditionally, so this succeeds at zero extra cost whenever the
@@ -335,7 +335,7 @@ a general "free everything I forgot to free" safety net.
   `ECCLES_RT_TOTAL_RAM_SIZE`).
 
 ```
-make test        # or: cd tests && ./run_tests.sh
+make test        # or: cd tests && bash run_tests.sh
 make sanitize    # same matrix under ASan + UBSan
 ```
 

@@ -6,7 +6,7 @@ if(ESP_PLATFORM)
     )
 else()
     cmake_minimum_required(VERSION 3.13)
-    project(EcclesRTLib VERSION 1.1.0 LANGUAGES C)
+    project(EcclesRTLib VERSION 2.0.0 LANGUAGES C)
 
     add_library(eccles_rtlib src/eccles_rtmem.c)
     add_library(eccles::rtlib ALIAS eccles_rtlib)

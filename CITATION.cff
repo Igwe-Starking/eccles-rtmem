@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If you use EcclesRTLib in research or a product write-up, please cite it as below."
 title: "EcclesRTLib"
 type: software
-version: 1.1.0
-date-released: 2026-09-28
+version: 2.0.0
+date-released: 2026-10-03
 license: MIT
 repository-code: "https://github.com/igwe-starking/eccles-rtmem"
 url: "https://github.com/Igwe-Starking/eccles-esp32-smart-bike/blob/main/firmware/source/components/eccles/src/RuntimeMemory.cpp"

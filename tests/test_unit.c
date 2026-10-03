@@ -361,6 +361,96 @@ static void test_realloc(void){
     printf("PASS realloc: NULL->malloc, same-capacity fast path, growth preserves content, 0->free, failure leaves original valid\n");
 }
 
+static void test_realloc_in_place(void){
+    /* geometry-adaptive: some test configs give pool C only 4 blocks */
+    enum { G = (C_COUNT < 5) ? C_COUNT : 5 };   /* grow target, in C blocks */
+    uint8_t *a, *g, *sh, *sh1, *t;
+
+    /* earlier tests leave the next-fit cursors mid-pool; a run that starts
+       at block 1 of a 4-block pool correctly can't grow to 4 blocks without
+       crossing the pool boundary, so start from known cursor positions */
+    assert(eccles_rt_reset());
+
+    /* GROW into the free blocks right after the run: pointer must not move,
+       content must survive, and the pool's used count grows by the delta */
+    a = eccles_rt_malloc((size_t)C_SIZE * 2);            /* 2-block run in pool C */
+    assert(a != NULL);
+    memset(a, 0x5A, (size_t)C_SIZE * 2);
+    check_counts(0, 0, 2, "2-block run");
+
+    g = eccles_rt_realloc(a, (size_t)C_SIZE * G);
+    assert(g == a);                                       /* extended, not moved */
+    for(size_t i = 0; i < (size_t)C_SIZE * 2; i++) assert(g[i] == 0x5A);
+    check_counts(0, 0, G, "grown in place");
+
+    /* SHRINK: trailing blocks go straight back to the pool, pointer stays */
+    sh = eccles_rt_realloc(g, (size_t)C_SIZE * 2 - 1);
+    assert(sh == g);
+    check_counts(0, 0, 2, "shrunk in place to 2 blocks");
+    sh1 = eccles_rt_realloc(sh, (size_t)C_SIZE + 1);      /* still 2 blocks */
+    assert(sh1 == sh);
+    check_counts(0, 0, 2, "same block count is a no-op");
+
+    /* the released tail is genuinely reusable, and the shrunk run still
+       frees as exactly 2 blocks */
+    t = eccles_rt_malloc((size_t)C_SIZE * (G - 2));
+    assert(t != NULL);
+    check_counts(0, 0, G, "tail reused by a neighbour");
+    assert(eccles_rt_free(t)   == ECCLES_RT_FREE_OK);
+    assert(eccles_rt_free(sh1) == ECCLES_RT_FREE_OK);
+    check_counts(0, 0, 0, "in-place shrink/grow cleaned up");
+
+    /* BLOCKED neighbour: growth must NOT stomp it. Outcome depends on how
+       much room the config has elsewhere (move succeeds, or NULL with the
+       original intact) - but the neighbour and the old content must survive
+       either way. */
+    {
+        uint8_t *x = eccles_rt_malloc((size_t)C_SIZE * 2);
+        uint8_t *y = eccles_rt_malloc(C_SIZE);            /* sits right after x */
+        uint8_t *x2;
+        assert(x && y);
+        memset(x, 0x11, (size_t)C_SIZE * 2);
+        memset(y, 0x22, C_SIZE);
+        x2 = eccles_rt_realloc(x, (size_t)C_SIZE * 3);
+        for(size_t i = 0; i < C_SIZE; i++) assert(y[i] == 0x22);
+        if(x2 == NULL){
+            for(size_t i = 0; i < (size_t)C_SIZE * 2; i++) assert(x[i] == 0x11); /* original still valid */
+            assert(eccles_rt_free(x) == ECCLES_RT_FREE_OK);
+        } else {
+            assert(x2 != x);                              /* it had to move */
+            for(size_t i = 0; i < (size_t)C_SIZE * 2; i++) assert(x2[i] == 0x11);
+            assert(eccles_rt_free(x2) == ECCLES_RT_FREE_OK);
+        }
+        assert(eccles_rt_free(y) == ECCLES_RT_FREE_OK);
+        check_counts(0, 0, 0, "blocked-grow cleaned up");
+    }
+
+    /* POOL BOUNDARY: with pool C completely full, its last run can't grow
+       past the pool end into anything - it either moves elsewhere or fails
+       cleanly with the original intact */
+    {
+        uint8_t *runs[C_COUNT];
+        unsigned n = 0, k;
+        uint8_t *r, *res;
+        while(n < C_COUNT && (r = eccles_rt_malloc(C_SIZE)) != NULL){ runs[n++] = r; }
+        assert(n == C_COUNT);
+        memset(runs[n - 1], 0x33, C_SIZE);
+        res = eccles_rt_realloc(runs[n - 1], (size_t)C_SIZE * 2);
+        if(res == NULL){
+            assert(runs[n - 1][0] == 0x33);
+            assert(eccles_rt_free(runs[n - 1]) == ECCLES_RT_FREE_OK);
+        } else {
+            assert(res != runs[n - 1]);
+            for(size_t i = 0; i < C_SIZE; i++) assert(res[i] == 0x33);
+            assert(eccles_rt_free(res) == ECCLES_RT_FREE_OK);
+        }
+        for(k = 0; k + 1 < n; k++) assert(eccles_rt_free(runs[k]) == ECCLES_RT_FREE_OK);
+        check_counts(0, 0, 0, "boundary test cleaned up");
+    }
+
+    printf("PASS realloc in place: grow into free neighbours, shrink releases tail, blocked/boundary cases fall back safely\n");
+}
+
 static void test_aligned_alloc(void){
     /* alignment <= ECCLES_RT_ALIGNMENT and a power of two: succeeds,
        same as a plain malloc (every allocation is already this aligned) */
@@ -417,6 +507,7 @@ int main(void){
     test_repeated_init();
     test_calloc();
     test_realloc();
+    test_realloc_in_place();
     test_aligned_alloc();
     test_reset();
 

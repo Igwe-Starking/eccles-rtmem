@@ -263,6 +263,91 @@
 #define ECCLES_RT_CONT_MARK 255u
 
 /* ===================================================================== *
+ *  occupancy bitmap (1 = block in use, 0 = block free)
+ *
+ *  A packed second view of eccles_rt_reg[]: bit i is 1 exactly when
+ *  eccles_rt_reg[i] != 0. eccles_rt_reg[] stays the source of truth for
+ *  run lengths (freeBuffer/resolve/realloc read it); the bitmap exists so
+ *  the search can jump to the next free block / end of a free run with one
+ *  count-trailing-zeros per 64 blocks instead of testing bytes one by one.
+ *  ECCLES_RT_TOTAL_BLOCKS <= 255 (header-enforced), so at most 4 words.
+ * ===================================================================== */
+
+#define ECCLES_RT__BM_WORDS ((ECCLES_RT_TOTAL_BLOCKS + 63) / 64)
+
+/* XOR masks for eccles_rt__bm_next: look for a FREE (0) or USED (1) bit */
+#define ECCLES_RT__FIND_FREE (~(uint64_t)0)
+#define ECCLES_RT__FIND_USED ((uint64_t)0)
+
+static uint64_t eccles_rt_bits[ECCLES_RT__BM_WORDS];
+
+/* ctzll is undefined for 0 - every caller below tests the word != 0 first */
+#if defined(__GNUC__) || defined(__clang__) || defined(__ARMCC_VERSION)
+  #define ECCLES_RT__CTZ64(x) ((uint8_t)__builtin_ctzll((unsigned long long)(x)))
+#else
+  static uint8_t eccles_rt__ctz64(uint64_t x){
+      uint8_t n = 0;
+      while((x & 1u) == 0u){ x >>= 1; n++; }
+      return n;
+  }
+  #define ECCLES_RT__CTZ64(x) eccles_rt__ctz64(x)
+#endif
+
+/* first index in [from, limit) whose bit matches `find` (one of the
+   ECCLES_RT__FIND_* masks), or `limit` if there is none. Always called
+   with a constant mask, so after inlining the XOR folds away. */
+static uint16_t eccles_rt__bm_next(uint16_t from, uint16_t limit, uint64_t find){
+    while(from < limit){
+        /* shift so bit 0 is `from`; vacated high bits read as 0 = "no match" */
+        uint64_t w = (eccles_rt_bits[from >> 6] ^ find) >> (from & 63u);
+        if(w != 0){
+            uint16_t idx = (uint16_t)(from + ECCLES_RT__CTZ64(w));
+            return (idx < limit) ? idx : limit;
+        }
+        from = (uint16_t)((from | 63u) + 1u); /* start of the next word */
+    }
+    return limit;
+}
+
+/* set (value != 0) or clear n bits starting at `start`, a whole word's
+   worth of bits per iteration (n <= 255, so at most 5 iterations) */
+static void eccles_rt__bm_set(uint8_t start, uint8_t n, uint8_t value){
+    uint16_t k = start, end = (uint16_t)start + n;
+    while(k < end){
+        uint8_t  sh   = (uint8_t)(k & 63u);
+        uint16_t span = (uint16_t)(64u - sh);
+        uint64_t m;
+        if(span > (uint16_t)(end - k)) span = (uint16_t)(end - k);
+        m = (span == 64u) ? ~(uint64_t)0 : ((((uint64_t)1 << span) - 1u) << sh);
+        if(value) eccles_rt_bits[k >> 6] |= m;
+        else      eccles_rt_bits[k >> 6] &= ~m;
+        k = (uint16_t)(k + span);
+    }
+}
+
+static void eccles_rt__bm_clear_all(void){
+    uint8_t w;
+    for(w = 0; w < ECCLES_RT__BM_WORDS; w++) eccles_rt_bits[w] = 0;
+}
+
+/* first run start s in [lo, hi] (inclusive) with `size` consecutive free
+   blocks starting at s, or 0xFFFF. Only the START is bounded by hi; the
+   caller guarantees hi + size <= pool end. Each step costs two ctzll's
+   regardless of how long the used/free stretches are. */
+static uint16_t eccles_rt__find_run(uint16_t lo, uint16_t hi, uint8_t size){
+    uint16_t pos = lo;
+    while(pos <= hi){
+        uint16_t f = eccles_rt__bm_next(pos, (uint16_t)(hi + 1u), ECCLES_RT__FIND_FREE);
+        uint16_t u;
+        if(f > hi) break;
+        u = eccles_rt__bm_next(f, (uint16_t)(f + size), ECCLES_RT__FIND_USED); /* capped at f+size */
+        if(u == (uint16_t)(f + size)) return f;
+        pos = (uint16_t)(u + 1u); /* resume just past the blocker */
+    }
+    return 0xFFFFu;
+}
+
+/* ===================================================================== *
  *  pool descriptors - table-driven instead of duplicating the same
  *  search/free logic three times (smaller code on flash-constrained parts)
  * ===================================================================== */
@@ -307,71 +392,76 @@ static uint8_t eccles_rt__log2_exact(size_t v){
     return (v == 1u) ? shift : 0xFF; /* 0xFF => not a power of two */
 }
 
+/* blocks of pool *p needed to hold `size` bytes (ceil division). Uses the
+   pool's shift/mask when its block size is a power of two, so the common
+   case never touches a divide (a library call on AVR/MSP430/Cortex-M0),
+   and never forms size + blockSize - 1, so it can't overflow for huge sizes. */
+static size_t eccles_rt__blocks_for(const eccles_rt_pool_t *p, size_t size){
+    if(p->shift != 0xFF){
+        return (size >> p->shift) + (((size & (p->blockSize - 1)) != 0) ? 1u : 0u);
+    }
+    return size / p->blockSize + (((size % p->blockSize) != 0) ? 1u : 0u);
+}
+
 /* ===================================================================== *
  *  allocation core
  * ===================================================================== */
 
 static uint8_t* eccles_rt_getFree(uint8_t size, uint8_t poolIdx){
     eccles_rt_pool_t *p = &eccles_rt_pools[poolIdx];
-    uint8_t rsb = p->regBase;
-    uint8_t rsz = p->count;
-    uint8_t *bpt = NULL;
-    uint8_t step, i, e;
+    uint8_t  rsb = p->regBase;
+    uint16_t end = (uint16_t)rsb + p->count; /* one past this pool's last registry index */
+    uint16_t cur = p->cursor;
+    uint16_t i;
+    size_t   byteOffset;
 
-    /* a request whose size doesn't fit in this pool at all can never be satisfied here */
-    if(size == 0 || size > rsz){
+    /* O(1) reject: fewer free blocks than requested means no run can
+       exist (this also covers size > count). It is what makes the
+       escalation chain in eccles_rt_malloc cheap - a full pool costs one
+       compare, not a scan. */
+    if(size == 0 || (uint8_t)(p->count - p->usedBlocks) < size){
         return NULL;
     }
 
-    /* cursor runs circular across this pool's own slice of the registry.
-       NOTE: the index arithmetic here must happen in a type wide enough
-       to hold cursor+step without wrapping BEFORE the boundary check runs
-       - p->cursor and step are both uint8_t, and when a pool's absolute
-       end index (rsb+rsz) is close to 256, cursor+step can itself
-       overflow 255 before reaching rsb+rsz, so truncating to uint8_t
-       first (as this used to) can silently produce an index that lands
-       in a totally different pool's territory instead of wrapping back
-       to the start of this one. Doing the add/compare in uint16_t and
-       only narrowing to uint8_t afterward avoids that. */
-    for(step = 0; step < rsz; step++){
-        uint16_t iw = (uint16_t)p->cursor + (uint16_t)step;
-        if(iw >= (uint16_t)(rsb + rsz)) iw = (uint16_t)(iw - rsz);
-        i = (uint8_t)iw;
-
-        /* don't let a multi-block request scan or land past this pool's own boundary */
-        if((uint16_t)i + (uint16_t)size > (uint16_t)(rsb + rsz)) continue;
-
-        if(eccles_rt_reg[i] == 0){
-            bool free_run = true;
-            for(e = i; e < (uint8_t)(i + size); e++){
-                if(eccles_rt_reg[e] != 0){ free_run = false; break; }
-            }
-            if(free_run){
-                size_t byteOffset;
-                if(p->shift != 0xFF){
-                    byteOffset = ((size_t)(i - rsb) << p->shift) + p->offset;
-                } else {
-                    byteOffset = ((size_t)(i - rsb) * p->blockSize) + p->offset;
-                }
-                bpt = &eccles_rt_pool[byteOffset];
-
-                eccles_rt_reg[i] = size;
-                {
-                    uint8_t iu;
-                    for(iu = (uint8_t)(i + 1); iu < (uint8_t)(i + size); iu++){
-                        eccles_rt_reg[iu] = (uint8_t)ECCLES_RT_CONT_MARK;
-                    }
-                }
-                p->usedBlocks = (uint8_t)(p->usedBlocks + size);
-
-                {
-                    uint8_t next = (uint8_t)(i + size);
-                    if(next >= rsb + rsz) next = (uint8_t)(next - rsz);
-                    p->cursor = next;
-                }
-                break;
-            }
+    if(size == 1){
+        /* single block: the check above proved at least one free bit
+           exists in this pool, so if [cursor, end) has none, [rsb, cursor)
+           is guaranteed to - no failure path, one ctzll in the common case */
+        i = eccles_rt__bm_next(cur, end, ECCLES_RT__FIND_FREE);
+        if(i == end) i = eccles_rt__bm_next(rsb, cur, ECCLES_RT__FIND_FREE);
+    } else {
+        /* circular first-fit: candidate starts are tried cursor..end-size,
+           then rsb..cursor-1, and a run may never start so late that it
+           would cross this pool's own boundary. All index math is uint16_t
+           so a pool ending near index 256 can't wrap a uint8_t. */
+        uint16_t lastStart = (uint16_t)(end - size);
+        i = (cur <= lastStart) ? eccles_rt__find_run(cur, lastStart, size) : 0xFFFFu;
+        if(i == 0xFFFFu && cur > rsb){
+            uint16_t hi = ((uint16_t)(cur - 1u) < lastStart) ? (uint16_t)(cur - 1u) : lastStart;
+            i = eccles_rt__find_run(rsb, hi, size);
         }
+        if(i == 0xFFFFu) return NULL;
+    }
+
+    /* commit: registry run length + continuation marks, bitmap, counter */
+    eccles_rt_reg[i] = size;
+    if(size == 1){
+        eccles_rt_bits[i >> 6] |= (uint64_t)1 << (i & 63u);
+    } else {
+        memset(&eccles_rt_reg[i + 1u], (int)ECCLES_RT_CONT_MARK, (size_t)size - 1u);
+        eccles_rt__bm_set((uint8_t)i, size, 1);
+    }
+    p->usedBlocks = (uint8_t)(p->usedBlocks + size);
+
+    {
+        uint16_t next = (uint16_t)(i + size);
+        p->cursor = (uint8_t)((next >= end) ? rsb : next);
+    }
+
+    if(p->shift != 0xFF){
+        byteOffset = ((size_t)(i - rsb) << p->shift) + p->offset;
+    } else {
+        byteOffset = ((size_t)(i - rsb) * p->blockSize) + p->offset;
     }
 
     /* deliberately no logging here - this can run inside the lock (called
@@ -381,7 +471,7 @@ static uint8_t* eccles_rt_getFree(uint8_t size, uint8_t poolIdx){
        running while interrupts are masked or another task is blocked on
        this mutex. eccles_rt_malloc logs once, after unlocking, if every
        attempt failed. */
-    return bpt;
+    return &eccles_rt_pool[byteOffset];
 }
 
 /* Shared by eccles_rt_freeBuffer() and eccles_rt_realloc(): resolves an
@@ -431,7 +521,7 @@ static eccles_rt_status_t eccles_rt__resolve(uint8_t *buffer, eccles_rt_pool_t *
 
 static eccles_rt_status_t eccles_rt_freeBuffer(uint8_t* buffer){
     eccles_rt_pool_t *p;
-    uint8_t rind, mb, i;
+    uint8_t rind, mb;
     eccles_rt_status_t st = eccles_rt__resolve(buffer, &p, &rind, &mb);
 
     /* no logging here (see the "deliberately no logging" note in getFree
@@ -439,9 +529,8 @@ static eccles_rt_status_t eccles_rt_freeBuffer(uint8_t* buffer){
        logs once, after unlocking, based on the status this returns. */
     if(st != ECCLES_RT_FREE_OK) return st;
 
-    for(i = rind; i < (uint8_t)(rind + mb); i++){
-        eccles_rt_reg[i] = 0;
-    }
+    memset(&eccles_rt_reg[rind], 0, mb);
+    eccles_rt__bm_set(rind, mb, 0);
     p->usedBlocks = (uint8_t)(p->usedBlocks - mb);
 
     /* zeroing every freed block is skipped on purpose - costs up to
@@ -492,6 +581,8 @@ bool eccles_rtmem_init(void){
         for(k = 0; k < ECCLES_RT_TOTAL_BLOCKS; k++) eccles_rt_reg[k] = 0;
     }
 #endif
+
+    eccles_rt__bm_clear_all();
 
     eccles_rt_pools[POOL_A].offset    = ECCLES_RT__OFFSET_A;
     eccles_rt_pools[POOL_A].blockSize = ECCLES_RT_BLOCK_A_SIZE;
@@ -611,7 +702,7 @@ uint8_t* eccles_rt_malloc(size_t size){
         for(ci = 0; ci < 3; ci++){
             uint8_t poolIdx = candPool[ci];
             size_t bs = eccles_rt_pools[poolIdx].blockSize;
-            size_t need = size / bs + ((size % bs) ? 1 : 0);
+            size_t need = eccles_rt__blocks_for(&eccles_rt_pools[poolIdx], size);
             cand[ci].poolIdx = poolIdx;
             cand[ci].need = need;
             cand[ci].feasible = (need <= 255);
@@ -638,8 +729,7 @@ uint8_t* eccles_rt_malloc(size_t size){
         uint8_t oi;
         for(oi = 0; oi < 3 && result == NULL; oi++){
             uint8_t poolIdx = order[oi];
-            size_t bs = eccles_rt_pools[poolIdx].blockSize;
-            size_t need = size / bs + ((size % bs) ? 1 : 0);
+            size_t need = eccles_rt__blocks_for(&eccles_rt_pools[poolIdx], size);
             if(need <= 255){
                 result = eccles_rt_getFree((uint8_t)need, poolIdx);
             }
@@ -711,7 +801,8 @@ uint8_t* eccles_rt_calloc(size_t count, size_t size){
 uint8_t* eccles_rt_realloc(uint8_t *ptr, size_t new_size){
     eccles_rt_pool_t *p;
     uint8_t rind, mb;
-    size_t oldCapacity;
+    size_t oldCapacity = 0;
+    bool inPlace = false;
     eccles_rt_status_t st;
     ECCLES_RT_LOCK_STATE_T lockState;
     uint8_t *newPtr;
@@ -725,17 +816,55 @@ uint8_t* eccles_rt_realloc(uint8_t *ptr, size_t new_size){
 #endif
     if(!ECCLES_RT_MUTEX_VALID(eccles_rt_lock)) return NULL;
 
-    /* look up ptr's currently-allocated capacity under its own short lock
-       section, separate from the eccles_rt_malloc/_free calls below (each
-       of which takes and releases the same lock internally). This
-       composes correctly and avoids any risk of a recursive-lock
-       deadlock, at the cost of not being one atomic critical section -
-       same as every other realloc() implementation, this function is not
-       safe to call concurrently with another thread freeing or
-       reallocating the SAME pointer. */
+    /* resolve + resize-in-place happen in ONE critical section, so no
+       other task can claim the neighbouring blocks between "I checked
+       they're free" and "I took them". Only the move fallback below
+       (malloc + copy + free) is split across separate lock sections,
+       same as before - as with every realloc(), this is not safe against
+       another thread freeing/reallocating the SAME pointer concurrently. */
     ECCLES_RT_LOCK(eccles_rt_lock, lockState);
     st = eccles_rt__resolve(ptr, &p, &rind, &mb);
-    oldCapacity = (st == ECCLES_RT_FREE_OK) ? ((size_t)mb * p->blockSize) : 0;
+    if(st == ECCLES_RT_FREE_OK){
+        size_t need = eccles_rt__blocks_for(p, new_size);
+        oldCapacity = (size_t)mb * p->blockSize;
+
+        if(need == (size_t)mb){
+            inPlace = true; /* same block count: nothing to touch */
+
+        } else if(need < (size_t)mb){
+            /* SHRINK: hand the excess tail blocks straight back to the pool.
+               The run keeps its start, so the pointer doesn't move. Bytes
+               are not zeroed (same policy as free). */
+            uint8_t keep   = (uint8_t)need;
+            uint8_t excess = (uint8_t)(mb - keep);
+            eccles_rt_reg[rind] = keep;
+            memset(&eccles_rt_reg[rind + keep], 0, excess);
+            eccles_rt__bm_set((uint8_t)(rind + keep), excess, 0);
+            p->usedBlocks = (uint8_t)(p->usedBlocks - excess);
+            inPlace = true;
+
+        } else if(need <= p->count){
+            /* GROW: look at the boundary right after this run. If the next
+               (need - mb) blocks are free and still inside this pool, absorb
+               them - no copy, no move. */
+            uint16_t poolEnd = (uint16_t)p->regBase + p->count;
+            uint16_t tail    = (uint16_t)rind + mb;
+            uint16_t newEnd  = (uint16_t)rind + (uint16_t)need;
+            if(newEnd <= poolEnd && eccles_rt__bm_next(tail, newEnd, ECCLES_RT__FIND_USED) == newEnd){
+                uint8_t extra = (uint8_t)(need - mb);
+                eccles_rt_reg[rind] = (uint8_t)need;
+                memset(&eccles_rt_reg[tail], (int)ECCLES_RT_CONT_MARK, extra);
+                eccles_rt__bm_set((uint8_t)tail, extra, 1);
+                p->usedBlocks = (uint8_t)(p->usedBlocks + extra);
+                /* keep the next-fit cursor from pointing into the run we
+                   just grew */
+                if(p->cursor >= tail && p->cursor < newEnd){
+                    p->cursor = (uint8_t)((newEnd >= poolEnd) ? p->regBase : newEnd);
+                }
+                inPlace = true;
+            }
+        }
+    }
     ECCLES_RT_UNLOCK(eccles_rt_lock, lockState);
 
     if(st != ECCLES_RT_FREE_OK){
@@ -744,12 +873,12 @@ uint8_t* eccles_rt_realloc(uint8_t *ptr, size_t new_size){
         ECCLES_RT_LOG_LINE("eccles_rtmem: eccles_rt_realloc given a pointer this allocator doesn't recognize, ignoring");
         return NULL;
     }
+    if(inPlace) return ptr;
 
-    if(new_size <= oldCapacity){
-        /* fits in the capacity already reserved - no copy or move needed */
-        return ptr;
-    }
-
+    /* couldn't extend in place (neighbour in use, pool boundary, or the
+       request is bigger than this whole pool): move to wherever it fits,
+       possibly a different class. Here new_size > oldCapacity, so copying
+       oldCapacity bytes is the full preserved content. */
     newPtr = eccles_rt_malloc(new_size);
     if(newPtr == NULL){
         return NULL; /* ptr is untouched and still valid - do not free it here */
@@ -786,6 +915,7 @@ bool eccles_rt_reset(void){
         uint16_t k;
         for(k = 0; k < ECCLES_RT_TOTAL_BLOCKS; k++) eccles_rt_reg[k] = 0;
     }
+    eccles_rt__bm_clear_all();
     eccles_rt_pools[POOL_A].cursor     = ECCLES_RT__REGBASE_A;
     eccles_rt_pools[POOL_A].usedBlocks = 0;
     eccles_rt_pools[POOL_B].cursor     = ECCLES_RT__REGBASE_B;

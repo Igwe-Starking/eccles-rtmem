@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-10-03
+
+A full rewrite of the allocation core for speed, plus a smarter in-place `realloc`. No header renames and no removed symbols -- every 1.x call site keeps compiling and behaving the same on the happy path -- but the major version is bumped because two behaviors are now observably different: `realloc` can shrink/grow a pointer in place where 1.x always either took the no-op "fits already" path or copied, and the search order within a pool, while producing the same placement, no longer visits blocks one byte at a time (relevant only if you were somehow depending on timing or on the exact in-progress state mid-scan from another thread, which was never supported).
+
+### Changed
+- **`eccles_rt_getFree` is bitmap-driven.** A packed occupancy bitmap (at most 32 bytes, 1 bit per block) mirrors the block registry. The search jumps over runs of used or free blocks with one `__builtin_ctzll` per 64 blocks (a portable bit-by-bit fallback compiles on toolchains without the builtin) instead of testing registry bytes one at a time. Final placement is byte-for-byte identical to 1.x -- same circular first-fit order, same winning block -- this changes how fast the answer is found, not what the answer is.
+- **O(1) full-pool rejection.** A pool with fewer free blocks than requested now returns immediately from a maintained `usedBlocks` counter instead of scanning. This is what makes the small-allocation escalation chain (A -> B -> C) from 1.1.0 cheap even when the earlier pools are completely full.
+- **Single-block fast path.** For a 1-block request, once free capacity is proven to exist, the search cannot fail -- one `ctzll` in the common case, no run-length verification, no failure branch to fall through.
+- **Word-wide bookkeeping.** Marking and clearing a run uses `memset` on the registry and whole-word masks on the bitmap instead of a per-block loop. Block-count math in `malloc`/`realloc` now goes through a shared shift+mask helper for power-of-two block sizes, so it costs no divide on AVR, MSP430, or Cortex-M0 (none of which have hardware division).
+- **`eccles_rt_realloc` resizes in place.** 1.1.0's `realloc` only ever had a no-op fast path (new size fits the already-allocated capacity) or a full allocate+copy+free. 2.0.0 adds two more paths, both inside the same critical section as the resolve step so nothing else can claim the neighbouring blocks in between: shrinking releases the excess trailing blocks straight back to the pool; growing checks the boundary right after the run and absorbs the next blocks if they're free and still inside the same pool. Only when the neighbour is in use, or the pool ends, does it fall back to moving the allocation -- which, as before, may land in a different pool class.
+
+### Added
+- `test_realloc_in_place()`: grow-into-free-neighbour, shrink-releases-tail, same-block-count no-op, a blocked-neighbour case (must not stomp the block after it, whichever outcome it takes), and a pool-boundary case (last run in a full pool, nowhere to grow into). Runs as part of the existing 12-configuration matrix, including under AddressSanitizer and UndefinedBehaviorSanitizer.
+- Additional stress-test verification for this release: 2,000,000-operation randomized runs (4x the suite's default) against the default config, the near-255-block config, and `MIN_WASTE`, all clean under ASan/UBSan with zero canary corruption and all pools empty at the end.
+
 ## [1.1.0] - 2026-09-28
 
 A deep audit pass: RAM-aware sizing, three new allocation functions, and several correctness fixes. No breaking changes -- every renamed symbol keeps its old name as a `#define`/`typedef` alias.
